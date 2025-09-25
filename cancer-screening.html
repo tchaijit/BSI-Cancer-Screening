@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>แอปคัดกรองมะเร็งเบื้องต้น</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Prompt', sans-serif; }
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .card-shadow { box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const CancerScreeningApp = () => {
+            const [currentStep, setCurrentStep] = useState(0);
+            const [formData, setFormData] = useState({
+                age: '',
+                gender: '',
+                familyHistory: {},
+                personalHistory: {},
+                lifestyle: {},
+                symptoms: {}
+            });
+            const [results, setResults] = useState(null);
+
+            const cancerTypes = [
+                {
+                    name: 'มะเร็งเต้านม',
+                    screeningAge: { female: 40, male: null },
+                    riskFactors: ['familyHistory', 'age', 'hormones'],
+                    symptoms: ['เนื้องอก', 'อาการปวด', 'หัวนมหลั่ง']
+                },
+                {
+                    name: 'มะเร็งปากมดลูก',
+                    screeningAge: { female: 25, male: null },
+                    riskFactors: ['sexualActivity', 'smoking'],
+                    symptoms: ['เลือดออกผิดปกติ', 'ปวดเมื่อมีเพศสำพันธ์']
+                },
+                {
+                    name: 'มะเร็งลำไส้ใหญ่',
+                    screeningAge: { female: 50, male: 50 },
+                    riskFactors: ['familyHistory', 'diet', 'smoking'],
+                    symptoms: ['เลือดในอุจจาระ', 'เปลี่ยนการขับถ่าย']
+                },
+                {
+                    name: 'มะเร็งตับ',
+                    screeningAge: { female: 40, male: 40 },
+                    riskFactors: ['hepatitisB', 'alcohol', 'familyHistory'],
+                    symptoms: ['ปวดท้องด้านขวา', 'น้ำหนักลด', 'เหลืองตา']
+                },
+                {
+                    name: 'มะเร็งปอด',
+                    screeningAge: { female: 50, male: 50 },
+                    riskFactors: ['smoking', 'secondhandSmoke'],
+                    symptoms: ['ไอเรื้อรัง', 'ไอเลือด', 'หายใจหอบ']
+                }
+            ];
+
+            const questions = [
+                {
+                    title: "ข้อมูลทั่วไป",
+                    fields: [
+                        { key: 'age', label: 'อายุ (ปี)', type: 'number', required: true },
+                        { 
+                            key: 'gender', 
+                            label: 'เพศ', 
+                            type: 'radio', 
+                            options: [
+                                { value: 'female', label: 'หญิง' },
+                                { value: 'male', label: 'ชาย' }
+                            ], 
+                            required: true 
+                        }
+                    ]
+                },
+                {
+                    title: "ประวัติครอบครัว",
+                    fields: [
+                        { key: 'familyHistory.breast', label: 'ประวัติมะเร็งเต้านมในครอบครัว', type: 'checkbox' },
+                        { key: 'familyHistory.colorectal', label: 'ประวัติมะเร็งลำไส้ใหญ่ในครอบครัว', type: 'checkbox' },
+                        { key: 'familyHistory.liver', label: 'ประวัติมะเร็งตับในครอบครัว', type: 'checkbox' },
+                        { key: 'familyHistory.lung', label: 'ประวัติมะเร็งปอดในครอบครัว', type: 'checkbox' }
+                    ]
+                },
+                {
+                    title: "ประวัติส่วนตัวและพฤติกรรมเสี่ยง",
+                    fields: [
+                        { key: 'personalHistory.smoking', label: 'สูบบุหรี่', type: 'checkbox' },
+                        { key: 'personalHistory.alcohol', label: 'ดื่มแอลกอฮอล์เป็นประจำ', type: 'checkbox' },
+                        { key: 'personalHistory.hepatitisB', label: 'ติดเชื้อไวรัสตับอักเสบบี', type: 'checkbox' },
+                        { key: 'lifestyle.exercise', label: 'ออกกำลังกายน้อยกว่า 3 ครั้งต่อสัปดาห์', type: 'checkbox' },
+                        { key: 'lifestyle.diet', label: 'บริโภคอาหารมัน ทอด เค็ม เป็นประจำ', type: 'checkbox' }
+                    ]
+                },
+                {
+                    title: "อาการที่พบ",
+                    fields: [
+                        { key: 'symptoms.lump', label: 'มีก้อนผิดปกติ', type: 'checkbox' },
+                        { key: 'symptoms.bloodInStool', label: 'เลือดในอุจจาระ', type: 'checkbox' },
+                        { key: 'symptoms.chronicCough', label: 'ไอเรื้อรัง', type: 'checkbox' },
+                        { key: 'symptoms.weightLoss', label: 'น้ำหนักลดโดยไม่ทราบสาเหตุ', type: 'checkbox' },
+                        { key: 'symptoms.abdominalPain', label: 'ปวดท้องด้านขวาเรื้อรัง', type: 'checkbox' }
+                    ]
+                }
+            ];
+
+            const getNestedValue = (obj, path) => {
+                return path.split('.').reduce((current, key) => current?.[key], obj);
+            };
+
+            const setNestedValue = (obj, path, value) => {
+                const keys = path.split('.');
+                const lastKey = keys.pop();
+                const target = keys.reduce((current, key) => {
+                    if (!current[key]) current[key] = {};
+                    return current[key];
+                }, obj);
+                target[lastKey] = value;
+            };
+
+            const handleInputChange = (key, value) => {
+                setFormData(prev => {
+                    const newData = { ...prev };
+                    setNestedValue(newData, key, value);
+                    return newData;
+                });
+            };
+
+            const calculateRisk = () => {
+                const age = parseInt(formData.age);
+                const gender = formData.gender;
+                const recommendations = [];
+
+                cancerTypes.forEach(cancer => {
+                    let riskLevel = 'ต่ำ';
+                    let shouldScreen = false;
+                    let riskFactors = [];
+
+                    // ตรวจสอบอายุคัดกรอง
+                    const screeningAge = cancer.screeningAge[gender];
+                    if (screeningAge && age >= screeningAge) {
+                        shouldScreen = true;
+                        riskFactors.push(`อายุเกิน ${screeningAge} ปี`);
+                    }
+
+                    // ตรวจสอบปัจจัยเสี่ยง
+                    if (cancer.riskFactors.includes('familyHistory')) {
+                        const familyKey = cancer.name === 'มะเร็งเต้านม' ? 'breast' :
+                                         cancer.name === 'มะเร็งลำไส้ใหญ่' ? 'colorectal' :
+                                         cancer.name === 'มะเร็งตับ' ? 'liver' : 'lung';
+                        
+                        if (formData.familyHistory[familyKey]) {
+                            riskLevel = 'สูง';
+                            riskFactors.push('ประวัติครอบครัว');
+                        }
+                    }
+
+                    if (cancer.riskFactors.includes('smoking') && formData.personalHistory?.smoking) {
+                        riskLevel = 'สูง';
+                        riskFactors.push('สูบบุหรี่');
+                    }
+
+                    if (cancer.riskFactors.includes('alcohol') && formData.personalHistory?.alcohol) {
+                        riskLevel = riskLevel === 'สูง' ? 'สูง' : 'ปานกลาง';
+                        riskFactors.push('ดื่มแอลกอฮอล์');
+                    }
+
+                    // ตรวจสอบอาการ
+                    let hasSymptoms = false;
+                    if (cancer.name === 'มะเร็งเต้านม' && formData.symptoms?.lump) {
+                        hasSymptoms = true;
+                        riskFactors.push('มีก้อนผิดปกติ');
+                    }
+                    if (cancer.name === 'มะเร็งลำไส้ใหญ่' && formData.symptoms?.bloodInStool) {
+                        hasSymptoms = true;
+                        riskFactors.push('เลือดในอุจจาระ');
+                    }
+                    if (cancer.name === 'มะเร็งปอด' && formData.symptoms?.chronicCough) {
+                        hasSymptoms = true;
+                        riskFactors.push('ไอเรื้อรัง');
+                    }
+                    if (cancer.name === 'มะเร็งตับ' && (formData.symptoms?.abdominalPain || formData.symptoms?.weightLoss)) {
+                        hasSymptoms = true;
+                        if (formData.symptoms?.abdominalPain) riskFactors.push('ปวดท้องด้านขวา');
+                        if (formData.symptoms?.weightLoss) riskFactors.push('น้ำหนักลด');
+                    }
+
+                    if (hasSymptoms) {
+                        riskLevel = 'สูงมาก';
+                    }
+
+                    recommendations.push({
+                        cancer: cancer.name,
+                        riskLevel,
+                        shouldScreen,
+                        riskFactors,
+                        hasSymptoms
+                    });
+                });
+
+                setResults(recommendations);
+            };
+
+            const generateCarePlan = (recommendation) => {
+                const plans = {
+                    'มะเร็งเต้านม': {
+                        'สูงมาก': 'ปรึกษาแพทย์โดยด่วน, ตรวจ mammography และ ultrasound',
+                        'สูง': 'ตรวจ mammography ทุก 1 ปี, ตรวจตัวเองเดือนละครั้ง',
+                        'ปานกลาง': 'ตรวจ mammography ทุก 2 ปี, ตรวจตัวเองเดือนละครั้ง',
+                        'ต่ำ': 'ตรวจตัวเองเดือนละครั้ง, mammography หลัง 40 ปี'
+                    },
+                    'มะเร็งปากมุลม': {
+                        'สูง': 'ตรวจ Pap smear ทุกปี, ตรวจ HPV',
+                        'ปานกลาง': 'ตรวจ Pap smear ทุก 2-3 ปี',
+                        'ต่ำ': 'ตรวจ Pap smear ทุก 3 ปี หลังอายุ 25'
+                    },
+                    'มะเร็งลำไส้ใหญ่': {
+                        'สูงมาก': 'ปรึกษาแพทย์โดยด่วน, ตรวจ colonoscopy',
+                        'สูง': 'ตรวจ colonoscopy ทุก 3-5 ปี',
+                        'ปานกลาง': 'ตรวจ FOBT ทุกปี, colonoscopy ทุก 10 ปี',
+                        'ต่ำ': 'ตรวจคัดกรองหลังอายุ 50 ปี'
+                    },
+                    'มะเร็งตับ': {
+                        'สูงมาก': 'ปรึกษาแพทย์โดยด่วน, ตรวจ ultrasound + AFP',
+                        'สูง': 'ตรวจ ultrasound + AFP ทุก 6 เดือน',
+                        'ปานกลาง': 'ตรวจ ultrasound + AFP ทุกปี',
+                        'ต่ำ': 'ตรวจสุขภาพประจำปี'
+                    },
+                    'มะเร็งปอด': {
+                        'สูงมาก': 'ปรึกษาแพทย์โดยด่วน, ตรวจ Low-dose CT',
+                        'สูง': 'ตรวจ Low-dose CT ทุกปี, เลิกสูบบุหรี่',
+                        'ปานกลาง': 'เฝ้าระวังอาการ, เลิกสูบบุหรี่',
+                        'ต่ำ': 'หลีกเลี่ยงควันบุหรี่'
+                    }
+                };
+
+                return plans[recommendation.cancer]?.[recommendation.riskLevel] || 'ปรึกษาแพทย์เพื่อคำแนะนำที่เหมาะสม';
+            };
+
+            const exportToPDF = () => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+
+                // เพิ่มฟอนต์ไทย (ใช้ฟอนต์ default สำหรับตัวอย่าง)
+                doc.setFont("helvetica");
+                doc.setFontSize(16);
+                doc.text('รายงานผลการคัดกรองมะเร็งเบื้องต้น', 20, 20);
+                
+                doc.setFontSize(12);
+                doc.text(`วันที่ประเมิน: ${new Date().toLocaleDateString('th-TH')}`, 20, 35);
+                doc.text(`อายุ: ${formData.age} ปี`, 20, 45);
+                doc.text(`เพศ: ${formData.gender === 'female' ? 'หญิง' : 'ชาย'}`, 20, 55);
+
+                let yPosition = 75;
+                
+                results.forEach((result, index) => {
+                    doc.setFontSize(14);
+                    doc.text(`${index + 1}. ${result.cancer}`, 20, yPosition);
+                    yPosition += 10;
+                    
+                    doc.setFontSize(10);
+                    doc.text(`ระดับความเสี่ยง: ${result.riskLevel}`, 25, yPosition);
+                    yPosition += 8;
+                    
+                    if (result.riskFactors.length > 0) {
+                        doc.text(`ปัจจัยเสี่ยง: ${result.riskFactors.join(', ')}`, 25, yPosition);
+                        yPosition += 8;
+                    }
+                    
+                    const carePlan = generateCarePlan(result);
+                    const lines = doc.splitTextToSize(`แนวทางการดูแล: ${carePlan}`, 170);
+                    doc.text(lines, 25, yPosition);
+                    yPosition += lines.length * 6 + 10;
+
+                    if (yPosition > 250) {
+                        doc.addPage();
+                        yPosition = 20;
+                    }
+                });
+
+                doc.setFontSize(8);
+                doc.text('หมายเหตุ: ผลการประเมินนี้เป็นเพียงข้อมูลเบื้องต้น ควรปรึกษาแพทย์เพื่อการวินิจฉัยและรักษาที่แม่นยำ', 20, yPosition + 10);
+
+                doc.save('cancer-screening-report.pdf');
+            };
+
+            const nextStep = () => {
+                if (currentStep < questions.length - 1) {
+                    setCurrentStep(currentStep + 1);
+                } else {
+                    calculateRisk();
+                    setCurrentStep(questions.length);
+                }
+            };
+
+            const prevStep = () => {
+                if (currentStep > 0) {
+                    setCurrentStep(currentStep - 1);
+                }
+            };
+
+            const renderField = (field) => {
+                const value = getNestedValue(formData, field.key) || '';
+
+                switch (field.type) {
+                    case 'number':
+                        return (
+                            <input
+                                type="number"
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                value={value}
+                                onChange={(e) => handleInputChange(field.key, e.target.value)}
+                                required={field.required}
+                                min="0"
+                                max="120"
+                            />
+                        );
+                    case 'radio':
+                        return (
+                            <div className="space-y-2">
+                                {field.options.map(option => (
+                                    <label key={option.value} className="flex items-center space-x-3 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            name={field.key}
+                                            value={option.value}
+                                            checked={value === option.value}
+                                            onChange={(e) => handleInputChange(field.key, e.target.value)}
+                                            className="w-4 h-4 text-blue-600"
+                                        />
+                                        <span className="text-gray-700">{option.label}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        );
+                    case 'checkbox':
+                        return (
+                            <label className="flex items-center space-x-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(value)}
+                                    onChange={(e) => handleInputChange(field.key, e.target.checked)}
+                                    className="w-4 h-4 text-blue-600 rounded"
+                                />
+                                <span className="text-gray-700">มี</span>
+                            </label>
+                        );
+                    default:
+                        return null;
+                }
+            };
+
+            const getRiskColor = (riskLevel) => {
+                switch (riskLevel) {
+                    case 'สูงมาก': return 'bg-red-100 text-red-800 border-red-200';
+                    case 'สูง': return 'bg-orange-100 text-orange-800 border-orange-200';
+                    case 'ปานกลาง': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+                    case 'ต่ำ': return 'bg-green-100 text-green-800 border-green-200';
+                    default: return 'bg-gray-100 text-gray-800 border-gray-200';
+                }
+            };
+
+            if (results) {
+                return (
+                    <div className="min-h-screen py-8">
+                        <div className="max-w-4xl mx-auto px-4">
+                            <div className="bg-white rounded-xl card-shadow p-8">
+                                <h1 className="text-3xl font-bold text-center text-gray-800 mb-8">
+                                    ผลการคัดกรองมะเร็งเบื้องต้น
+                                </h1>
+                                
+                                <div className="grid gap-6">
+                                    {results.map((result, index) => (
+                                        <div key={index} className="border rounded-lg p-6 hover:shadow-md transition-shadow">
+                                            <div className="flex justify-between items-start mb-4">
+                                                <h3 className="text-xl font-semibold text-gray-800">
+                                                    {result.cancer}
+                                                </h3>
+                                                <span className={`px-3 py-1 rounded-full text-sm font-medium border ${getRiskColor(result.riskLevel)}`}>
+                                                    {result.riskLevel}
+                                                </span>
+                                            </div>
+                                            
+                                            {result.riskFactors.length > 0 && (
+                                                <div className="mb-4">
+                                                    <p className="text-gray-600 mb-2">ปัจจัยเสี่ยงที่พบ:</p>
+                                                    <ul className="list-disc list-inside text-gray-700 space-y-1">
+                                                        {result.riskFactors.map((factor, i) => (
+                                                            <li key={i}>{factor}</li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                            
+                                            <div className="bg-blue-50 rounded-lg p-4">
+                                                <p className="text-blue-800 font-medium mb-2">แนวทางการดูแล:</p>
+                                                <p className="text-blue-700">{generateCarePlan(result)}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="mt-8 text-center space-y-4">
+                                    <button
+                                        onClick={exportToPDF}
+                                        className="bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-8 rounded-lg transition-colors"
+                                    >
+                                        📄 ดาวน์โหลดรายงาน PDF
+                                    </button>
+                                    
+                                    <button
+                                        onClick={() => {
+                                            setResults(null);
+                                            setCurrentStep(0);
+                                            setFormData({
+                                                age: '',
+                                                gender: '',
+                                                familyHistory: {},
+                                                personalHistory: {},
+                                                lifestyle: {},
+                                                symptoms: {}
+                                            });
+                                        }}
+                                        className="block mx-auto text-blue-600 hover:text-blue-800 underline"
+                                    >
+                                        ประเมินใหม่
+                                    </button>
+                                </div>
+
+                                <div className="mt-8 bg-yellow-50 border-l-4 border-yellow-400 p-4">
+                                    <p className="text-yellow-800 text-sm">
+                                        <strong>ข้อควรระวัง:</strong> ผลการประเมินนี้เป็นเพียงข้อมูลเบื้องต้นเพื่อการให้ความรู้เท่านั้น 
+                                        ไม่สามารถใช้ทดแทนการวินิจฉัยของแพทย์ได้ ควรปรึกษาแพทย์เพื่อการตรวจและรักษาที่เหมาะสม
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen gradient-bg py-8">
+                    <div className="max-w-2xl mx-auto px-4">
+                        <div className="text-center mb-8">
+                            <h1 className="text-4xl font-bold text-white mb-4">
+                                แอปคัดกรองมะเร็งเบื้องต้น
+                            </h1>
+                            <p className="text-white opacity-90">
+                                ประเมินความเสี่ยงและรับคำแนะนำการดูแลเบื้องต้น
+                            </p>
+                        </div>
+
+                        <div className="bg-white rounded-xl card-shadow p-8">
+                            <div className="mb-6">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-2xl font-bold text-gray-800">
+                                        {questions[currentStep]?.title}
+                                    </h2>
+                                    <span className="text-sm text-gray-500">
+                                        {currentStep + 1} / {questions.length}
+                                    </span>
+                                </div>
+                                
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div 
+                                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                        style={{ width: `${((currentStep + 1) / questions.length) * 100}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-6">
+                                {questions[currentStep]?.fields.map((field, index) => (
+                                    <div key={index} className="space-y-2">
+                                        <label className="block text-sm font-medium text-gray-700">
+                                            {field.label}
+                                            {field.required && <span className="text-red-500 ml-1">*</span>}
+                                        </label>
+                                        {renderField(field)}
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="flex justify-between mt-8">
+                                <button
+                                    onClick={prevStep}
+                                    disabled={currentStep === 0}
+                                    className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+                                        currentStep === 0 
+                                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                    }`}
+                                >
+                                    ← ก่อนหน้า
+                                </button>
+
+                                <button
+                                    onClick={nextStep}
+                                    className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+                                >
+                                    {currentStep === questions.length - 1 ? 'ประเมินผล' : 'ถัดไป →'}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="mt-6 text-center">
+                            <p className="text-white opacity-75 text-sm">
+                                🔒 ข้อมูลของคุณปลอดภัย - เราไม่เก็บข้อมูลส่วนตัวใดๆ
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<CancerScreeningApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>
