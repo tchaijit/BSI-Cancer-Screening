@@ -1,0 +1,1778 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบประเมินความเสี่ยงและคัดกรองมะเร็ง - NCI Thailand</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/js/all.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Sarabun', sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .header-font { font-family: 'Kanit', sans-serif; }
+        .glass-card { 
+            backdrop-filter: blur(10px); 
+            background: rgba(255, 255, 255, 0.95); 
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        .step-indicator { 
+            background: linear-gradient(90deg, #4f46e5 0%, #06b6d4 100%);
+            height: 4px;
+            transition: width 0.3s ease;
+        }
+        .risk-badge-high { background: linear-gradient(135deg, #dc2626, #ef4444); }
+        .risk-badge-medium { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+        .risk-badge-low { background: linear-gradient(135deg, #10b981, #34d399); }
+        .form-field { transition: all 0.2s ease; }
+        .form-field:focus-within { transform: translateY(-2px); }
+        .floating-label { 
+            position: absolute; 
+            top: 50%; 
+            transform: translateY(-50%); 
+            left: 12px; 
+            color: #6b7280; 
+            pointer-events: none;
+            transition: all 0.2s ease;
+        }
+        .floating-label.active { 
+            top: -8px; 
+            font-size: 12px; 
+            background: white; 
+            padding: 0 4px; 
+            color: #4f46e5;
+        }
+        .radio-card {
+            border: 2px solid #e5e7eb;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+        .radio-card:hover { border-color: #4f46e5; transform: translateY(-1px); }
+        .radio-card.selected { 
+            border-color: #4f46e5; 
+            background: linear-gradient(135deg, #eef2ff, #f0f9ff); 
+        }
+        .pulse-animation { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .nci-header {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            position: relative;
+            overflow: hidden;
+        }
+        .nci-header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            animation: shimmer 3s infinite;
+        }
+        @keyframes shimmer {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+        .section-card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            border: 1px solid rgba(0,0,0,0.05);
+            transition: all 0.3s ease;
+        }
+        .section-card:hover { 
+            transform: translateY(-4px); 
+            box-shadow: 0 8px 40px rgba(0,0,0,0.15); 
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const NCICancerScreeningSystem = () => {
+            const [currentStep, setCurrentStep] = useState(0);
+            const [formData, setFormData] = useState({
+                // Basic Information
+                age: '',
+                gender: '',
+                height: '',
+                weight: '',
+                occupation: '',
+                location: 'urban',
+                
+                // Family History (Strong Risk Factors)
+                familyBreast: false,
+                familyCervical: false,
+                familyColorectal: false,
+                familyLiver: false,
+                familyLung: false,
+                familyProstate: false,
+                familyOvarian: false,
+                familyStomach: false,
+                
+                // Personal Medical History
+                previousCancer: false,
+                chronicHepatitis: false,
+                hpvPositive: false,
+                brca1Positive: false,
+                brca2Positive: false,
+                hormoneTherapy: false,
+                radiationExposure: false,
+                immunocompromised: false,
+                
+                // Lifestyle & Risk Behaviors
+                smokingStatus: 'never',
+                smokingPacks: '',
+                smokingYears: '',
+                alcoholConsumption: 'none',
+                exerciseFreq: 'regular',
+                dietQuality: 'healthy',
+                
+                // Reproductive History (for females)
+                menarcheAge: '',
+                firstPregnancy: '',
+                breastfeedingMonths: '',
+                menopauseAge: '',
+                oralContraceptives: false,
+                
+                // Screening History
+                lastMammography: 'never',
+                lastPapSmear: 'never',
+                lastColonoscopy: 'never',
+                lastLiverUltrasound: 'never',
+                lastChestXray: 'never',
+                
+                // Current Symptoms
+                symptomLump: false,
+                symptomAbnormalBleeding: false,
+                symptomChronicCough: false,
+                symptomAbdominalPain: false,
+                symptomWeightLoss: false,
+                symptomFatigue: false
+            });
+
+            const [results, setResults] = useState(null);
+            const [loading, setLoading] = useState(false);
+
+            const steps = [
+                {
+                    title: "ข้อมูลทั่วไป",
+                    subtitle: "รายละเอียดพื้นฐานเกี่ยวกับคุณ",
+                    icon: "fas fa-user",
+                    color: "#3b82f6"
+                },
+                {
+                    title: "ประวัติครอบครัว",
+                    subtitle: "ประวัติมะเร็งในญาติสายตรง",
+                    icon: "fas fa-users",
+                    color: "#8b5cf6"
+                },
+                {
+                    title: "ประวัติการเจ็บป่วย",
+                    subtitle: "โรคประจำตัวและการรักษา",
+                    icon: "fas fa-hospital-user",
+                    color: "#06b6d4"
+                },
+                {
+                    title: "พฤติกรรมสุขภาพ",
+                    subtitle: "ไลฟ์สไตล์และพฤติกรรมเสี่ยง",
+                    icon: "fas fa-heartbeat",
+                    color: "#10b981"
+                },
+                {
+                    title: "ประวัติการตรวจ",
+                    subtitle: "การคัดกรองที่เคยทำ",
+                    icon: "fas fa-stethoscope",
+                    color: "#f59e0b"
+                },
+                {
+                    title: "อาการปัจจุบัน",
+                    subtitle: "อาการที่พบในปัจจุบัน",
+                    icon: "fas fa-notes-medical",
+                    color: "#ef4444"
+                }
+            ];
+
+            const calculateComprehensiveRisk = () => {
+                const age = parseInt(formData.age);
+                const gender = formData.gender;
+                const cancerRisks = {};
+
+                // Breast Cancer Risk Assessment (ตาม NCI Guidelines)
+                if (gender === 'female') {
+                    let breastRisk = 0;
+                    
+                    // Age factor
+                    if (age >= 50) breastRisk += 2;
+                    else if (age >= 40) breastRisk += 1;
+                    
+                    // Strong risk factors
+                    if (formData.brca1Positive || formData.brca2Positive) breastRisk += 8;
+                    if (formData.familyBreast) breastRisk += 4;
+                    if (formData.previousCancer) breastRisk += 3;
+                    
+                    // Moderate risk factors
+                    if (formData.hormoneTherapy) breastRisk += 2;
+                    if (formData.radiationExposure) breastRisk += 2;
+                    if (parseInt(formData.menarcheAge) < 12) breastRisk += 1;
+                    if (parseInt(formData.firstPregnancy) > 30 || !formData.firstPregnancy) breastRisk += 1;
+                    
+                    // Protective factors
+                    if (parseInt(formData.breastfeedingMonths) > 12) breastRisk -= 1;
+                    if (formData.exerciseFreq === 'regular') breastRisk -= 0.5;
+                    
+                    cancerRisks.breast = {
+                        score: Math.max(0, breastRisk),
+                        level: breastRisk >= 6 ? 'สูงมาก' : breastRisk >= 4 ? 'สูง' : breastRisk >= 2 ? 'ปานกลาง' : 'ต่ำ'
+                    };
+                }
+
+                // Cervical Cancer Risk Assessment
+                if (gender === 'female') {
+                    let cervicalRisk = 0;
+                    
+                    // HPV infection (strongest risk factor)
+                    if (formData.hpvPositive) cervicalRisk += 6;
+                    
+                    // Screening history
+                    if (formData.lastPapSmear === 'never' && age >= 25) cervicalRisk += 3;
+                    else if (formData.lastPapSmear === 'over5years') cervicalRisk += 2;
+                    
+                    // Risk behaviors
+                    if (formData.smokingStatus !== 'never') cervicalRisk += 2;
+                    if (formData.immunocompromised) cervicalRisk += 2;
+                    if (formData.oralContraceptives) cervicalRisk += 1;
+                    
+                    // Multiple pregnancies
+                    if (parseInt(formData.firstPregnancy) < 20) cervicalRisk += 1;
+                    
+                    cancerRisks.cervical = {
+                        score: Math.max(0, cervicalRisk),
+                        level: cervicalRisk >= 7 ? 'สูงมาก' : cervicalRisk >= 5 ? 'สูง' : cervicalRisk >= 2 ? 'ปานกลาง' : 'ต่ำ'
+                    };
+                }
+
+                // Colorectal Cancer Risk Assessment
+                let colorectalRisk = 0;
+                
+                // Age factor
+                if (age >= 50) colorectalRisk += 3;
+                else if (age >= 45) colorectalRisk += 2;
+                
+                // Family history
+                if (formData.familyColorectal) colorectalRisk += 4;
+                
+                // Personal history
+                if (formData.previousCancer) colorectalRisk += 2;
+                
+                // Lifestyle factors
+                if (formData.smokingStatus !== 'never') colorectalRisk += 2;
+                if (formData.alcoholConsumption === 'heavy') colorectalRisk += 2;
+                if (formData.dietQuality === 'poor') colorectalRisk += 1;
+                if (formData.exerciseFreq === 'rarely') colorectalRisk += 1;
+                
+                // Screening history
+                if (formData.lastColonoscopy === 'never' && age >= 45) colorectalRisk += 2;
+                
+                // Protective factors
+                if (formData.dietQuality === 'healthy') colorectalRisk -= 1;
+                if (formData.exerciseFreq === 'regular') colorectalRisk -= 1;
+                
+                cancerRisks.colorectal = {
+                    score: Math.max(0, colorectalRisk),
+                    level: colorectalRisk >= 8 ? 'สูงมาก' : colorectalRisk >= 6 ? 'สูง' : colorectalRisk >= 3 ? 'ปانกลาง' : 'ต่ำ'
+                };
+
+                // Liver Cancer Risk Assessment
+                let liverRisk = 0;
+                
+                // Hepatitis infection (strongest risk factor)
+                if (formData.chronicHepatitis) liverRisk += 6;
+                
+                // Age factor
+                if (age >= 40) liverRisk += 2;
+                
+                // Risk behaviors
+                if (formData.alcoholConsumption === 'heavy') liverRisk += 3;
+                else if (formData.alcoholConsumption === 'moderate') liverRisk += 1;
+                
+                // Family history
+                if (formData.familyLiver) liverRisk += 3;
+                
+                // Other factors
+                if (formData.previousCancer) liverRisk += 2;
+                
+                cancerRisks.liver = {
+                    score: Math.max(0, liverRisk),
+                    level: liverRisk >= 8 ? 'สูงมาก' : liverRisk >= 5 ? 'สูง' : liverRisk >= 2 ? 'ปานกลาง' : 'ต่ำ'
+                };
+
+                // Lung Cancer Risk Assessment
+                let lungRisk = 0;
+                
+                // Smoking (strongest risk factor)
+                const packYears = parseFloat(formData.smokingPacks || 0) * parseFloat(formData.smokingYears || 0);
+                if (formData.smokingStatus === 'current') {
+                    if (packYears >= 30) lungRisk += 8;
+                    else if (packYears >= 20) lungRisk += 6;
+                    else if (packYears >= 10) lungRisk += 4;
+                    else if (packYears > 0) lungRisk += 2;
+                } else if (formData.smokingStatus === 'former') {
+                    if (packYears >= 30) lungRisk += 6;
+                    else if (packYears >= 20) lungRisk += 4;
+                    else if (packYears >= 10) lungRisk += 2;
+                }
+                
+                // Age factor
+                if (age >= 50 && formData.smokingStatus !== 'never') lungRisk += 2;
+                
+                // Family history
+                if (formData.familyLung) lungRisk += 3;
+                
+                // Environmental exposure
+                if (formData.occupation && formData.occupation.includes('mining')) lungRisk += 2;
+                if (formData.radiationExposure) lungRisk += 1;
+                
+                cancerRisks.lung = {
+                    score: Math.max(0, lungRisk),
+                    level: lungRisk >= 10 ? 'สูงมาก' : lungRisk >= 7 ? 'สูง' : lungRisk >= 3 ? 'ปานกลาง' : 'ต่ำ'
+                };
+
+                // Prostate Cancer Risk Assessment (for males)
+                if (gender === 'male') {
+                    let prostateRisk = 0;
+                    
+                    // Age factor (most important)
+                    if (age >= 70) prostateRisk += 4;
+                    else if (age >= 60) prostateRisk += 3;
+                    else if (age >= 50) prostateRisk += 2;
+                    else if (age >= 45) prostateRisk += 1;
+                    
+                    // Family history
+                    if (formData.familyProstate) prostateRisk += 3;
+                    if (formData.familyBreast) prostateRisk += 2; // BRCA mutations
+                    
+                    // Lifestyle factors
+                    if (formData.dietQuality === 'poor') prostateRisk += 1;
+                    if (formData.exerciseFreq === 'rarely') prostateRisk += 1;
+                    
+                    // Protective factors
+                    if (formData.dietQuality === 'healthy') prostateRisk -= 0.5;
+                    if (formData.exerciseFreq === 'regular') prostateRisk -= 0.5;
+                    
+                    cancerRisks.prostate = {
+                        score: Math.max(0, prostateRisk),
+                        level: prostateRisk >= 7 ? 'สูงมาก' : prostateRisk >= 5 ? 'สูง' : prostateRisk >= 3 ? 'ปานกลาง' : 'ต่ำ'
+                    };
+                }
+
+                return cancerRisks;
+            };
+
+            const generateNCIRecommendations = (riskAssessment) => {
+                const age = parseInt(formData.age);
+                const gender = formData.gender;
+                const recommendations = [];
+
+                // Breast Cancer Screening (NCI Guidelines)
+                if (gender === 'female' && riskAssessment.breast) {
+                    const breastRec = {
+                        type: 'การคัดกรองมะเร็งเต้านม',
+                        urgency: riskAssessment.breast.level,
+                        guidelines: 'NCI Thailand Guidelines 2566',
+                        recommendations: []
+                    };
+
+                    if (riskAssessment.breast.level === 'สูงมาก') {
+                        breastRec.recommendations = [
+                            '🔴 ปรึกษาแพทย์เฉพาะทางโดยด่วน',
+                            '📅 Mammography ทุก 6-12 เดือน',
+                            '🔍 MRI เต้านม (หากมี BRCA mutations)',
+                            '🩺 ตรวจทางคลินิกทุก 3-6 เดือน',
+                            '✋ ตรวจตนเองทุกเดือน'
+                        ];
+                    } else if (riskAssessment.breast.level === 'สูง' || age >= 40) {
+                        breastRec.recommendations = [
+                            '📅 Mammography ทุก 1-2 ปี',
+                            '🩺 ตรวจทางคลินิกทุก 6-12 เดือน',
+                            '✋ ตรวจตนเองทุกเดือน',
+                            '📝 พิจารณาปรึกษาผู้เชี่ยวชาญด้านพันธุกรรม'
+                        ];
+                    } else if (age >= 25) {
+                        breastRec.recommendations = [
+                            '✋ ตรวจตนเองทุกเดือน',
+                            '📅 เริ่ม Mammography ที่อายุ 40 ปี',
+                            '🩺 ตรวจทางคลินิกตามความเหมาะสม'
+                        ];
+                    }
+
+                    if (formData.symptomLump) {
+                        breastRec.recommendations.unshift('🚨 พบก้อนผิดปกติ - ต้องพบแพทย์ทันที');
+                        breastRec.urgency = 'เร่งด่วน';
+                    }
+
+                    recommendations.push(breastRec);
+                }
+
+                // Cervical Cancer Screening
+                if (gender === 'female' && riskAssessment.cervical) {
+                    const cervicalRec = {
+                        type: 'การคัดกรองมะเร็งปากมดลูก',
+                        urgency: riskAssessment.cervical.level,
+                        guidelines: 'NCI Thailand Guidelines',
+                        recommendations: []
+                    };
+
+                    if (riskAssessment.cervical.level === 'สูงมาก') {
+                        cervicalRec.recommendations = [
+                            '🔴 ปรึกษาแพทย์สตรีโดยด่วน',
+                            '🧪 Pap smear + HPV test ทุกปี',
+                            '🔍 Colposcopy หากผลผิดปกติ',
+                            '💉 พิจารณาการฉีดวัคซีน HPV'
+                        ];
+                    } else if (age >= 25) {
+                        if (riskAssessment.cervical.level === 'สูง') {
+                            cervicalRec.recommendations = [
+                                '🧪 Pap smear ทุกปี',
+                                '🦠 HPV test ร่วมด้วย',
+                                '🚭 เลิกสูบบุหรี่ (หากสูบ)'
+                            ];
+                        } else {
+                            cervicalRec.recommendations = [
+                                '🧪 Pap smear ทุก 3 ปี (อายุ 25-65 ปี)',
+                                '🦠 หรือ HPV test ทุก 5 ปี',
+                                '💉 พิจารณาการฉีดวัคซีน HPV (อายุ 9-26 ปี)'
+                            ];
+                        }
+                    }
+
+                    if (formData.symptomAbnormalBleeding) {
+                        cervicalRec.recommendations.unshift('🚨 เลือดออกผิดปกติ - ต้องพบแพทย์ทันที');
+                        cervicalRec.urgency = 'เร่งด่วน';
+                    }
+
+                    recommendations.push(cervicalRec);
+                }
+
+                // Colorectal Cancer Screening
+                if (riskAssessment.colorectal) {
+                    const colorectalRec = {
+                        type: 'การคัดกรองมะเร็งลำไส้ใหญ่และไส้ตรง',
+                        urgency: riskAssessment.colorectal.level,
+                        guidelines: 'NCI Thailand Guidelines',
+                        recommendations: []
+                    };
+
+                    if (riskAssessment.colorectal.level === 'สูงมาก') {
+                        colorectalRec.recommendations = [
+                            '🔴 ปรึกษาแพทย์ระบบทางเดินอาหารโดยด่วน',
+                            '🔍 Colonoscopy ทุก 1-3 ปี',
+                            '🩸 ตรวจ CEA tumor marker',
+                            '📝 พิจารณาปรึกษาผู้เชี่ยวชาญด้านพันธุกรรม'
+                        ];
+                    } else if (age >= 45 || riskAssessment.colorectal.level === 'สูง') {
+                        colorectalRec.recommendations = [
+                            '🔍 Colonoscopy ทุก 10 ปี',
+                            '🧪 หรือ FIT test ทุกปี',
+                            '🥗 รับประทานอาหารที่มีไฟเบอร์สูง',
+                            '🏃‍♀️ ออกกำลังกายสม่ำเสมอ',
+                            '🚭 เลิกสูบบุหรี่และลดแอลกอฮอล์'
+                        ];
+                    } else if (age >= 45) {
+                        colorectalRec.recommendations = [
+                            '📅 เริ่มคัดกรองที่อายุ 45 ปี',
+                            '🧪 FIT test ทุกปี หรือ',
+                            '🔍 Colonoscopy ทุก 10 ปี'
+                        ];
+                    }
+
+                    if (formData.symptomAbdominalPain || formData.symptomWeightLoss) {
+                        colorectalRec.recommendations.unshift('🚨 มีอาการน่าสงสัย - ต้องพบแพทย์ทันที');
+                        colorectalRec.urgency = 'เร่งด่วน';
+                    }
+
+                    recommendations.push(colorectalRec);
+                }
+
+                // Liver Cancer Screening
+                if (riskAssessment.liver) {
+                    const liverRec = {
+                        type: 'การคัดกรองมะเร็งตับ',
+                        urgency: riskAssessment.liver.level,
+                        guidelines: 'NCI Thailand Guidelines',
+                        recommendations: []
+                    };
+
+                    if (formData.chronicHepatitis || riskAssessment.liver.level === 'สูง') {
+                        liverRec.recommendations = [
+                            '📊 Ultrasound ช่องท้อง + AFP ทุก 6 เดือน',
+                            '🩸 ตรวจ liver function test',
+                            '💊 รักษาไวรัสตับอักเสบให้ควบคุมได้',
+                            '🚫 เลิกดื่มแอลกอฮอล์'
+                        ];
+                    } else if (riskAssessment.liver.level === 'ปานกลาง') {
+                        liverRec.recommendations = [
+                            '📊 Ultrasound ช่องท้อง ทุกปี',
+                            '🩸 ตรวจ AFP ตามความเหมาะสม',
+                            '🍺 ลดการดื่มแอลกอฮอล์'
+                        ];
+                    }
+
+                    recommendations.push(liverRec);
+                }
+
+                // Lung Cancer Screening
+                if (riskAssessment.lung && riskAssessment.lung.level !== 'ต่ำ') {
+                    const lungRec = {
+                        type: 'การคัดกรองมะเร็งปอด',
+                        urgency: riskAssessment.lung.level,
+                        guidelines: 'NCI Thailand Guidelines',
+                        recommendations: []
+                    };
+
+                    const packYears = parseFloat(formData.smokingPacks || 0) * parseFloat(formData.smokingYears || 0);
+                    
+                    if (riskAssessment.lung.level === 'สูงมาก' || (packYears >= 20 && age >= 50)) {
+                        lungRec.recommendations = [
+                            '🫁 Low-dose CT ทรวงอก ทุกปี',
+                            '🚭 เลิกสูบบุหรี่โดยเร็ว (หากยังสูบ)',
+                            '🩺 ตรวจสุขภาพปอดสม่ำเสมอ',
+                            '😷 หลีกเลี่ยงมลพิษทางอากาศ'
+                        ];
+                    } else if (formData.smokingStatus !== 'never') {
+                        lungRec.recommendations = [
+                            '📸 Chest X-ray ทุกปี',
+                            '🚭 เลิกสูบบุหรี่',
+                            '🏃‍♀️ ออกกำลังกายเพื่อสุขภาพปอด'
+                        ];
+                    }
+
+                    if (formData.symptomChronicCough) {
+                        lungRec.recommendations.unshift('🚨 ไอเรื้อรัง - ต้องพบแพทย์ทันที');
+                        lungRec.urgency = 'เร่งด่วน';
+                    }
+
+                    recommendations.push(lungRec);
+                }
+
+                // Prostate Cancer Screening (for males)
+                if (gender === 'male' && riskAssessment.prostate) {
+                    const prostateRec = {
+                        type: 'การคัดกรองมะเร็งต่อมลูกหมาก',
+                        urgency: riskAssessment.prostate.level,
+                        guidelines: 'NCI Thailand Guidelines',
+                        recommendations: []
+                    };
+
+                    if (age >= 50 || (age >= 45 && formData.familyProstate)) {
+                        if (riskAssessment.prostate.level === 'สูง') {
+                            prostateRec.recommendations = [
+                                '🩸 PSA test ทุกปี',
+                                '🩺 Digital rectal exam',
+                                '📝 ปรึกษาแพทย์เรื่อง shared decision making'
+                            ];
+                        } else {
+                            prostateRec.recommendations = [
+                                '💬 ปรึกษาแพทย์เรื่องข้อดี-ข้อเสียของการตรวจ PSA',
+                                '🩸 PSA test ทุก 2 ปี (หากตัดสินใจตรวจ)',
+                                '🥗 รับประทานอาหารเพื่อสุขภาพ'
+                            ];
+                        }
+                    }
+
+                    recommendations.push(prostateRec);
+                }
+
+                return recommendations;
+            };
+
+            const calculateBMI = () => {
+                const height = parseFloat(formData.height) / 100;
+                const weight = parseFloat(formData.weight);
+                if (height && weight) {
+                    return (weight / (height * height)).toFixed(1);
+                }
+                return null;
+            };
+
+            const getBMIStatus = (bmi) => {
+                if (bmi < 18.5) return { status: 'น้ำหนักน้อย', color: 'text-blue-600', bg: 'bg-blue-100' };
+                if (bmi < 23) return { status: 'น้ำหนักปกติ', color: 'text-green-600', bg: 'bg-green-100' };
+                if (bmi < 25) return { status: 'น้ำหนักเกิน', color: 'text-yellow-600', bg: 'bg-yellow-100' };
+                if (bmi < 30) return { status: 'อ้วนระดับ 1', color: 'text-orange-600', bg: 'bg-orange-100' };
+                return { status: 'อ้วนระดับ 2', color: 'text-red-600', bg: 'bg-red-100' };
+            };
+
+            const handleInputChange = (key, value) => {
+                setFormData(prev => ({ ...prev, [key]: value }));
+            };
+
+            const nextStep = async () => {
+                if (currentStep < steps.length - 1) {
+                    setCurrentStep(prev => prev + 1);
+                } else {
+                    setLoading(true);
+                    // Simulate processing time for better UX
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    
+                    const riskAssessment = calculateComprehensiveRisk();
+                    const recommendations = generateNCIRecommendations(riskAssessment);
+                    
+                    setResults({
+                        riskAssessment,
+                        recommendations,
+                        bmi: calculateBMI(),
+                        timestamp: new Date()
+                    });
+                    setLoading(false);
+                }
+            };
+
+            const prevStep = () => {
+                if (currentStep > 0) {
+                    setCurrentStep(prev => prev - 1);
+                }
+            };
+
+            const resetSystem = () => {
+                setResults(null);
+                setCurrentStep(0);
+                setFormData({
+                    age: '', gender: '', height: '', weight: '', occupation: '', location: 'urban',
+                    familyBreast: false, familyCervical: false, familyColorectal: false,
+                    familyLiver: false, familyLung: false, familyProstate: false,
+                    familyOvarian: false, familyStomach: false,
+                    previousCancer: false, chronicHepatitis: false, hpvPositive: false,
+                    brca1Positive: false, brca2Positive: false, hormoneTherapy: false,
+                    radiationExposure: false, immunocompromised: false,
+                    smokingStatus: 'never', smokingPacks: '', smokingYears: '',
+                    alcoholConsumption: 'none', exerciseFreq: 'regular', dietQuality: 'healthy',
+                    menarcheAge: '', firstPregnancy: '', breastfeedingMonths: '',
+                    menopauseAge: '', oralContraceptives: false,
+                    lastMammography: 'never', lastPapSmear: 'never', lastColonoscopy: 'never',
+                    lastLiverUltrasound: 'never', lastChestXray: 'never',
+                    symptomLump: false, symptomAbnormalBleeding: false, symptomChronicCough: false,
+                    symptomAbdominalPain: false, symptomWeightLoss: false, symptomFatigue: false
+                });
+            };
+
+            const exportAdvancedPDF = () => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+
+                // Header
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(18);
+                doc.text('รายงานการประเมินความเสี่ยงมะเร็ง', 20, 25);
+                doc.setFontSize(12);
+                doc.text('Cancer Risk Assessment Report', 20, 33);
+                
+                // Patient Info
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(10);
+                doc.text(`Generated: ${results.timestamp.toLocaleDateString('th-TH')} ${results.timestamp.toLocaleTimeString('th-TH')}`, 20, 45);
+                doc.text(`Age: ${formData.age} years | Gender: ${formData.gender} | BMI: ${results.bmi || 'N/A'}`, 20, 52);
+
+                let yPosition = 70;
+
+                // Risk Assessment Summary
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(14);
+                doc.text('Risk Assessment Summary', 20, yPosition);
+                yPosition += 15;
+
+                Object.entries(results.riskAssessment).forEach(([cancer, assessment]) => {
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(11);
+                    doc.text(`${cancer.charAt(0).toUpperCase() + cancer.slice(1)} Cancer`, 25, yPosition);
+                    yPosition += 8;
+                    
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(9);
+                    doc.text(`Risk Level: ${assessment.level} | Score: ${assessment.score.toFixed(1)}`, 30, yPosition);
+                    yPosition += 12;
+
+                    if (yPosition > 250) {
+                        doc.addPage();
+                        yPosition = 20;
+                    }
+                });
+
+                // Recommendations
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(14);
+                doc.text('Screening Recommendations', 20, yPosition + 10);
+                yPosition += 25;
+
+                results.recommendations.forEach((rec, index) => {
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(11);
+                    doc.text(`${index + 1}. ${rec.type}`, 25, yPosition);
+                    yPosition += 8;
+                    
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(9);
+                    doc.text(`Priority: ${rec.urgency} | Guidelines: ${rec.guidelines}`, 30, yPosition);
+                    yPosition += 8;
+
+                    rec.recommendations.forEach(recommendation => {
+                        const cleanRec = recommendation.replace(/[🔴🟡🟢📅🔍🩺✋📝🧪🦠💉🚨🩸🔴💊🚫📊🍺🫁🚭😷📸🏃‍♀️💬🥗🩸]/g, '').trim();
+                        const lines = doc.splitTextToSize(`• ${cleanRec}`, 160);
+                        doc.text(lines, 35, yPosition);
+                        yPosition += lines.length * 5 + 2;
+                    });
+                    
+                    yPosition += 8;
+
+                    if (yPosition > 250) {
+                        doc.addPage();
+                        yPosition = 20;
+                    }
+                });
+
+                // Disclaimer
+                doc.setFont("helvetica", "italic");
+                doc.setFontSize(8);
+                const disclaimer = 'Disclaimer: This assessment is for educational purposes only and should not replace professional medical advice. Please consult with healthcare providers for personalized medical care.';
+                const disclaimerLines = doc.splitTextToSize(disclaimer, 170);
+                doc.text(disclaimerLines, 20, yPosition + 10);
+
+                doc.save('cancer-risk-assessment-report.pdf');
+            };
+
+            const renderStepContent = () => {
+                switch (currentStep) {
+                    case 0:
+                        return (
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="form-field">
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">อายุ (ปี) *</label>
+                                        <input
+                                            type="number"
+                                            min="18"
+                                            max="120"
+                                            value={formData.age}
+                                            onChange={(e) => handleInputChange('age', e.target.value)}
+                                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                            placeholder="ระบุอายุ"
+                                        />
+                                    </div>
+
+                                    <div className="form-field">
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">เพศ *</label>
+                                        <select
+                                            value={formData.gender}
+                                            onChange={(e) => handleInputChange('gender', e.target.value)}
+                                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        >
+                                            <option value="">เลือกเพศ</option>
+                                            <option value="male">ชาย</option>
+                                            <option value="female">หญิง</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="form-field">
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">ส่วนสูง (ซม.) *</label>
+                                        <input
+                                            type="number"
+                                            min="100"
+                                            max="250"
+                                            value={formData.height}
+                                            onChange={(e) => handleInputChange('height', e.target.value)}
+                                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                            placeholder="เช่น 170"
+                                        />
+                                    </div>
+
+                                    <div className="form-field">
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">น้ำหนัก (กก.) *</label>
+                                        <input
+                                            type="number"
+                                            min="30"
+                                            max="300"
+                                            value={formData.weight}
+                                            onChange={(e) => handleInputChange('weight', e.target.value)}
+                                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                            placeholder="เช่น 65"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="form-field">
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">อาชีพ</label>
+                                    <input
+                                        type="text"
+                                        value={formData.occupation}
+                                        onChange={(e) => handleInputChange('occupation', e.target.value)}
+                                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                        placeholder="เช่น พนักงานออฟฟิศ, เกษตรกร"
+                                    />
+                                </div>
+
+                                {formData.height && formData.weight && (
+                                    <div className="bg-blue-50 p-4 rounded-lg">
+                                        <div className="flex items-center space-x-4">
+                                            <span className="text-blue-800 font-medium">BMI ของคุณ: {calculateBMI()}</span>
+                                            {(() => {
+                                                const bmi = parseFloat(calculateBMI());
+                                                const status = getBMIStatus(bmi);
+                                                return (
+                                                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${status.color} ${status.bg}`}>
+                                                        {status.status}
+                                                    </span>
+                                                );
+                                            })()}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+
+                    case 1:
+                        return (
+                            <div className="space-y-6">
+                                <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                                    <p className="text-amber-800 text-sm">
+                                        <i className="fas fa-info-circle mr-2"></i>
+                                        ประวัติมะเร็งในครอบครัวเป็นปัจจัยเสี่ยงสำคัญ กรุณาระบุประวัติของญาติสายตรง (พ่อ แม่ พี่น้อง บุตร)
+                                    </p>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {[
+                                        { key: 'familyBreast', label: 'มะเร็งเต้านม', icon: 'fas fa-ribbon' },
+                                        { key: 'familyCervical', label: 'มะเร็งปากมดลูก', icon: 'fas fa-venus' },
+                                        { key: 'familyColorectal', label: 'มะเร็งลำไส้ใหญ่', icon: 'fas fa-stomach' },
+                                        { key: 'familyLiver', label: 'มะเร็งตับ', icon: 'fas fa-liver' },
+                                        { key: 'familyLung', label: 'มะเร็งปอด', icon: 'fas fa-lungs' },
+                                        { key: 'familyProstate', label: 'มะเร็งต่อมลูกหมาก', icon: 'fas fa-mars' },
+                                        { key: 'familyOvarian', label: 'มะเร็งรังไข่', icon: 'fas fa-female' },
+                                        { key: 'familyStomach', label: 'มะเร็งกระเพาะอาหาร', icon: 'fas fa-utensils' }
+                                    ].map((item) => (
+                                        <div key={item.key} className="form-field">
+                                            <div className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:border-blue-500 transition-colors">
+                                                <div className="flex items-center space-x-3">
+                                                    <i className={`${item.icon} text-blue-600`}></i>
+                                                    <span className="font-medium text-gray-700">{item.label}</span>
+                                                </div>
+                                                <div className="flex space-x-4">
+                                                    <label className="flex items-center space-x-2 cursor-pointer">
+                                                        <input
+                                                            type="radio"
+                                                            name={item.key}
+                                                            value="true"
+                                                            checked={formData[item.key] === true}
+                                                            onChange={() => handleInputChange(item.key, true)}
+                                                            className="w-4 h-4 text-blue-600"
+                                                        />
+                                                        <span className="text-sm text-gray-600">มี</span>
+                                                    </label>
+                                                    <label className="flex items-center space-x-2 cursor-pointer">
+                                                        <input
+                                                            type="radio"
+                                                            name={item.key}
+                                                            value="false"
+                                                            checked={formData[item.key] === false}
+                                                            onChange={() => handleInputChange(item.key, false)}
+                                                            className="w-4 h-4 text-blue-600"
+                                                        />
+                                                        <span className="text-sm text-gray-600">ไม่มี</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+
+                    case 2:
+                        return (
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-1 gap-6">
+                                    {[
+                                        { key: 'previousCancer', label: 'เคยเป็นมะเร็งมาก่อน', icon: 'fas fa-history', color: 'red' },
+                                        { key: 'chronicHepatitis', label: 'ติดเชื้อไวรัสตับอักเสบ B หรือ C', icon: 'fas fa-virus', color: 'orange' },
+                                        { key: 'hpvPositive', label: 'ตรวจพบเชื้อ HPV', icon: 'fas fa-microscope', color: 'purple' },
+                                        { key: 'brca1Positive', label: 'ตรวจพบพันธุกรรม BRCA1 ผิดปกติ', icon: 'fas fa-dna', color: 'blue' },
+                                        { key: 'brca2Positive', label: 'ตรวจพบพันธุกรรม BRCA2 ผิดปกติ', icon: 'fas fa-dna', color: 'blue' },
+                                        { key: 'hormoneTherapy', label: 'ใช้ฮอร์โมนทดแทนเป็นเวลานาน', icon: 'fas fa-pills', color: 'green' },
+                                        { key: 'radiationExposure', label: 'เคยได้รับรังสีในปริมาณสูง', icon: 'fas fa-radiation', color: 'yellow' },
+                                        { key: 'immunocompromised', label: 'ภูมิคุ้มกันบกพร่อง', icon: 'fas fa-shield-virus', color: 'pink' }
+                                    ].map((item) => (
+                                        <div key={item.key} className={`radio-card ${formData[item.key] ? 'selected' : ''} p-4 rounded-lg`}>
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center space-x-3">
+                                                    <div className={`w-10 h-10 rounded-full bg-${item.color}-100 flex items-center justify-center`}>
+                                                        <i className={`${item.icon} text-${item.color}-600`}></i>
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-medium text-gray-800">{item.label}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex space-x-4">
+                                                    <label className="flex items-center space-x-2 cursor-pointer">
+                                                        <input
+                                                            type="radio"
+                                                            name={item.key}
+                                                            value="true"
+                                                            checked={formData[item.key] === true}
+                                                            onChange={() => handleInputChange(item.key, true)}
+                                                            className="w-5 h-5 text-blue-600"
+                                                        />
+                                                        <span className="text-sm font-medium text-gray-700">มี</span>
+                                                    </label>
+                                                    <label className="flex items-center space-x-2 cursor-pointer">
+                                                        <input
+                                                            type="radio"
+                                                            name={item.key}
+                                                            value="false"
+                                                            checked={formData[item.key] === false}
+                                                            onChange={() => handleInputChange(item.key, false)}
+                                                            className="w-5 h-5 text-blue-600"
+                                                        />
+                                                        <span className="text-sm font-medium text-gray-700">ไม่มี</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+
+                    case 3:
+                        return (
+                            <div className="space-y-6">
+                                {/* Smoking Status */}
+                                <div className="form-field">
+                                    <label className="block text-sm font-semibold text-gray-700 mb-3">สถานะการสูบบุหรี่</label>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        {[
+                                            { value: 'never', label: 'ไม่เคยสูบ', color: 'green' },
+                                            { value: 'former', label: 'เลิกแล้ว', color: 'yellow' },
+                                            { value: 'current', label: 'สูบอยู่', color: 'red' }
+                                        ].map((option) => (
+                                            <div
+                                                key={option.value}
+                                                className={`radio-card ${formData.smokingStatus === option.value ? 'selected' : ''} p-4 rounded-lg cursor-pointer`}
+                                                onClick={() => handleInputChange('smokingStatus', option.value)}
+                                            >
+                                                <div className="flex items-center space-x-3">
+                                                    <input
+                                                        type="radio"
+                                                        name="smokingStatus"
+                                                        value={option.value}
+                                                        checked={formData.smokingStatus === option.value}
+                                                        onChange={() => {}}
+                                                        className="w-4 h-4 text-blue-600"
+                                                    />
+                                                    <span className="font-medium text-gray-700">{option.label}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Smoking Details */}
+                                {(formData.smokingStatus === 'current' || formData.smokingStatus === 'former') && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="form-field">
+                                            <label className="block text-sm font-semibold text-gray-700 mb-2">จำนวนมวนต่อวัน (หรือซองต่อวัน)</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={formData.smokingPacks}
+                                                onChange={(e) => handleInputChange('smokingPacks', e.target.value)}
+                                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                                placeholder="เช่น 1"
+                                            />
+                                        </div>
+                                        <div className="form-field">
+                                            <label className="block text-sm font-semibold text-gray-700 mb-2">จำนวนปีที่สูบ</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={formData.smokingYears}
+                                                onChange={(e) => handleInputChange('smokingYears', e.target.value)}
+                                                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                                                placeholder="เช่น 10"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Alcohol Consumption */}
+                                <div className="form-field">
+                                    <label className="block text-sm font-semibold text-gray-700 mb-3">การดื่มแอลกอฮอล์</label>
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                        {[
+                                            { value: 'none', label: 'ไม่ดื่ม', color: 'green' },
+                                            { value: 'light', label: 'นาน ๆ ครั้ง', color: 'blue' },
+                                            { value: 'moderate', label: 'สม่ำเสมอ', color: 'yellow' },
+                                            { value: 'heavy', label: 'ดื่มมาก', color: 'red' }
+                                        ].map((option) => (
+                                            <div
+                                                key={option.value}
+                                                className={`radio-card ${formData.alcoholConsumption === option.value ? 'selected' : ''} p-3 rounded-lg cursor-pointer text-center`}
+                                                onClick={() => handleInputChange('alcoholConsumption', option.value)}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name="alcoholConsumption"
+                                                    value={option.value}
+                                                    checked={formData.alcoholConsumption === option.value}
+                                                    onChange={() => {}}
+                                                    className="w-4 h-4 text-blue-600 mb-2"
+                                                />
+                                                <p className="text-sm font-medium text-gray-700">{option.label}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Exercise and Diet */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="form-field">
+                                        <label className="block text-sm font-semibold text-gray-700 mb-3">การออกกำลังกาย</label>
+                                        <div className="space-y-2">
+                                            {[
+                                                { value: 'regular', label: 'ออกกำลังกายสม่ำเสมอ (3+ ครั้ง/สัปดาห์)' },
+                                                { value: 'occasional', label: 'ออกกำลังกายบางครั้ง' },
+                                                { value: 'rarely', label: 'แทบไม่ออกกำลังกาย' }
+                                            ].map((option) => (
+                                                <label key={option.value} className="flex items-center space-x-3 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="exerciseFreq"
+                                                        value={option.value}
+                                                        checked={formData.exerciseFreq === option.value}
+                                                        onChange={(e) => handleInputChange('exerciseFreq', e.target.value)}
+                                                        className="w-4 h-4 text-blue-600"
+                                                    />
+                                                    <span className="text-sm text-gray-700">{option.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="form-field">
+                                        <label className="block text-sm font-semibold text-gray-700 mb-3">คุณภาพการรับประทานอาหาร</label>
+                                        <div className="space-y-2">
+                                            {[
+                                                { value: 'healthy', label: 'รับประทานผักผลไม้เป็นประจำ' },
+                                                { value: 'moderate', label: 'รับประทานผักผลไม้บางครั้ง' },
+                                                { value: 'poor', label: 'รับประทานอาหารมัน เค็ม หวาน เป็นประจำ' }
+                                            ].map((option) => (
+                                                <label key={option.value} className="flex items-center space-x-3 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="dietQuality"
+                                                        value={option.value}
+                                                        checked={formData.dietQuality === option.value}
+                                                        onChange={(e) => handleInputChange('dietQuality', e.target.value)}
+                                                        className="w-4 h-4 text-blue-600"
+                                                    />
+                                                    <span className="text-sm text-gray-700">{option.label}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Reproductive History for Females */}
+                                {formData.gender === 'female' && (
+                                    <div className="bg-pink-50 p-6 rounded-lg border border-pink-200">
+                                        <h4 className="font-semibold text-pink-800 mb-4">
+                                            <i className="fas fa-female mr-2"></i>ประวัติการเจริญพันธุ์
+                                        </h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="form-field">
+                                                <label className="block text-sm font-medium text-pink-700 mb-2">อายุที่มีประจำเดือนครั้งแรก</label>
+                                                <input
+                                                    type="number"
+                                                    min="8"
+                                                    max="20"
+                                                    value={formData.menarcheAge}
+                                                    onChange={(e) => handleInputChange('menarcheAge', e.target.value)}
+                                                    className="w-full px-4 py-2 border border-pink-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
+                                                    placeholder="เช่น 13"
+                                                />
+                                            </div>
+                                            <div className="form-field">
+                                                <label className="block text-sm font-medium text-pink-700 mb-2">อายุที่ตั้งครรภ์ครั้งแรก</label>
+                                                <input
+                                                    type="number"
+                                                    min="15"
+                                                    max="50"
+                                                    value={formData.firstPregnancy}
+                                                    onChange={(e) => handleInputChange('firstPregnancy', e.target.value)}
+                                                    className="w-full px-4 py-2 border border-pink-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
+                                                    placeholder="เช่น 25 (ปล่อยว่างหากไม่เคย)"
+                                                />
+                                            </div>
+                                            <div className="form-field">
+                                                <label className="block text-sm font-medium text-pink-700 mb-2">รวมระยะเวลาให้นมลูก (เดือน)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={formData.breastfeedingMonths}
+                                                    onChange={(e) => handleInputChange('breastfeedingMonths', e.target.value)}
+                                                    className="w-full px-4 py-2 border border-pink-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
+                                                    placeholder="เช่น 12"
+                                                />
+                                            </div>
+                                            <div className="form-field">
+                                                <label className="block text-sm font-medium text-pink-700 mb-2">อายุที่หมดประจำเดือน</label>
+                                                <input
+                                                    type="number"
+                                                    min="40"
+                                                    max="65"
+                                                    value={formData.menopauseAge}
+                                                    onChange={(e) => handleInputChange('menopauseAge', e.target.value)}
+                                                    className="w-full px-4 py-2 border border-pink-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
+                                                    placeholder="ปล่อยว่างหากยังไม่หมด"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div className="mt-4">
+                                            <label className="flex items-center space-x-3 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.oralContraceptives}
+                                                    onChange={(e) => handleInputChange('oralContraceptives', e.target.checked)}
+                                                    className="w-4 h-4 text-pink-600 rounded"
+                                                />
+                                                <span className="text-sm text-pink-700">เคยใช้ยาคุมกำเนิดเป็นเวลานาน (>5 ปี)</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+
+                    case 4:
+                        return (
+                            <div className="space-y-6">
+                                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                                    <p className="text-blue-800 text-sm">
+                                        <i className="fas fa-info-circle mr-2"></i>
+                                        ประวัติการตรวจคัดกรองจะช่วยให้แพทย์ประเมินความเสี่ยงได้แม่นยำมากขึ้น
+                                    </p>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-6">
+                                    {formData.gender === 'female' && (
+                                        <>
+                                            <div className="form-field">
+                                                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                                                    <i className="fas fa-x-ray mr-2 text-pink-600"></i>
+                                                    การตรวจ Mammography ครั้งล่าสุด
+                                                </label>
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                                    {[
+                                                        { value: 'never', label: 'ไม่เคย' },
+                                                        { value: 'within1year', label: 'ภายใน 1 ปี' },
+                                                        { value: 'within2years', label: 'ภายใน 2 ปี' },
+                                                        { value: 'over2years', label: 'เกิน 2 ปี' }
+                                                    ].map((option) => (
+                                                        <div
+                                                            key={option.value}
+                                                            className={`radio-card ${formData.lastMammography === option.value ? 'selected' : ''} p-3 rounded-lg cursor-pointer text-center`}
+                                                            onClick={() => handleInputChange('lastMammography', option.value)}
+                                                        >
+                                                            <input
+                                                                type="radio"
+                                                                name="lastMammography"
+                                                                value={option.value}
+                                                                checked={formData.lastMammography === option.value}
+                                                                onChange={() => {}}
+                                                                className="w-4 h-4 text-blue-600 mb-2"
+                                                            />
+                                                            <p className="text-xs font-medium text-gray-700">{option.label}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="form-field">
+                                                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                                                    <i className="fas fa-microscope mr-2 text-purple-600"></i>
+                                                    การตรวจ Pap smear ครั้งล่าสุด
+                                                </label>
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                                    {[
+                                                        { value: 'never', label: 'ไม่เคย' },
+                                                        { value: 'within1year', label: 'ภายใน 1 ปี' },
+                                                        { value: 'within3years', label: 'ภายใน 3 ปี' },
+                                                        { value: 'over3years', label: 'เกิน 3 ปี' }
+                                                    ].map((option) => (
+                                                        <div
+                                                            key={option.value}
+                                                            className={`radio-card ${formData.lastPapSmear === option.value ? 'selected' : ''} p-3 rounded-lg cursor-pointer text-center`}
+                                                            onClick={() => handleInputChange('lastPapSmear', option.value)}
+                                                        >
+                                                            <input
+                                                                type="radio"
+                                                                name="lastPapSmear"
+                                                                value={option.value}
+                                                                checked={formData.lastPapSmear === option.value}
+                                                                onChange={() => {}}
+                                                                className="w-4 h-4 text-blue-600 mb-2"
+                                                            />
+                                                            <p className="text-xs font-medium text-gray-700">{option.label}</p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    <div className="form-field">
+                                        <label className="block text-sm font-semibold text-gray-700 mb-3">
+                                            <i className="fas fa-camera mr-2 text-green-600"></i>
+                                            การตรวจ Colonoscopy ครั้งล่าสุด
+                                        </label>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                            {[
+                                                { value: 'never', label: 'ไม่เคย' },
+                                                { value: 'within5years', label: 'ภายใน 5 ปี' },
+                                                { value: 'within10years', label: 'ภายใน 10 ปี' },
+                                                { value: 'over10years', label: 'เกิน 10 ปี' }
+                                            ].map((option) => (
+                                                <div
+                                                    key={option.value}
+                                                    className={`radio-card ${formData.lastColonoscopy === option.value ? 'selected' : ''} p-3 rounded-lg cursor-pointer text-center`}
+                                                    onClick={() => handleInputChange('lastColonoscopy', option.value)}
+                                                >
+                                                    <input
+                                                        type="radio"
+                                                        name="lastColonoscopy"
+                                                        value={option.value}
+                                                        checked={formData.lastColonoscopy === option.value}
+                                                        onChange={() => {}}
+                                                        className="w-4 h-4 text-blue-600 mb-2"
+                                                    />
+                                                    <p className="text-xs font-medium text-gray-700">{option.label}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="form-field">
+                                        <label className="block text-sm font-semibold text-gray-700 mb-3">
+                                            <i className="fas fa-liver mr-2 text-yellow-600"></i>
+                                            การตรวจ Ultrasound ตับ ครั้งล่าสุด
+                                        </label>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                            {[
+                                                { value: 'never', label: 'ไม่เคย' },
+                                                { value: 'within6months', label: 'ภายใน 6 เดือน' },
+                                                { value: 'within1year', label: 'ภายใน 1 ปี' },
+                                                { value: 'over1year', label: 'เกิน 1 ปี' }
+                                            ].map((option) => (
+                                                <div
+                                                    key={option.value}
+                                                    className={`radio-card ${formData.lastLiverUltrasound === option.value ? 'selected' : ''} p-3 rounded-lg cursor-pointer text-center`}
+                                                    onClick={() => handleInputChange('lastLiverUltrasound', option.value)}
+                                                >
+                                                    <input
+                                                        type="radio"
+                                                        name="lastLiverUltrasound"
+                                                        value={option.value}
+                                                        checked={formData.lastLiverUltrasound === option.value}
+                                                        onChange={() => {}}
+                                                        className="w-4 h-4 text-blue-600 mb-2"
+                                                    />
+                                                    <p className="text-xs font-medium text-gray-700">{option.label}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="form-field">
+                                        <label className="block text-sm font-semibold text-gray-700 mb-3">
+                                            <i className="fas fa-lungs mr-2 text-blue-600"></i>
+                                            การตรวจ Chest X-ray หรือ CT ทรวงอก ครั้งล่าสุด
+                                        </label>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                            {[
+                                                { value: 'never', label: 'ไม่เคย' },
+                                                { value: 'within1year', label: 'ภายใน 1 ปี' },
+                                                { value: 'within2years', label: 'ภายใน 2 ปี' },
+                                                { value: 'over2years', label: 'เกิน 2 ปี' }
+                                            ].map((option) => (
+                                                <div
+                                                    key={option.value}
+                                                    className={`radio-card ${formData.lastChestXray === option.value ? 'selected' : ''} p-3 rounded-lg cursor-pointer text-center`}
+                                                    onClick={() => handleInputChange('lastChestXray', option.value)}
+                                                >
+                                                    <input
+                                                        type="radio"
+                                                        name="lastChestXray"
+                                                        value={option.value}
+                                                        checked={formData.lastChestXray === option.value}
+                                                        onChange={() => {}}
+                                                        className="w-4 h-4 text-blue-600 mb-2"
+                                                    />
+                                                    <p className="text-xs font-medium text-gray-700">{option.label}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+
+                    case 5:
+                        return (
+                            <div className="space-y-6">
+                                <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+                                    <p className="text-red-800 text-sm">
+                                        <i className="fas fa-exclamation-triangle mr-2"></i>
+                                        หากมีอาการใดอาการหนึ่ง แนะนำให้ปรึกษาแพทย์โดยเร็ว
+                                    </p>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-4">
+                                    {[
+                                        { 
+                                            key: 'symptomLump', 
+                                            label: 'มีก้อนหรือปุ่มผิดปกติ', 
+                                            description: 'ก้อนในเต้านม, คอ, หรือบริเวณอื่นๆ',
+                                            icon: 'fas fa-hand-paper',
+                                            color: 'red'
+                                        },
+                                        { 
+                                            key: 'symptomAbnormalBleeding', 
+                                            label: 'เลือดออกผิดปกติ', 
+                                            description: 'เลือดออกทางช่องคลอดผิดปกติ, เลือดในอุจจาระ',
+                                            icon: 'fas fa-tint',
+                                            color: 'red'
+                                        },
+                                        { 
+                                            key: 'symptomChronicCough', 
+                                            label: 'ไอเรื้อรัง', 
+                                            description: 'ไอมานานกว่า 3 สัปดาห์ หรือไอเลือด',
+                                            icon: 'fas fa-lungs',
+                                            color: 'orange'
+                                        },
+                                        { 
+                                            key: 'symptomAbdominalPain', 
+                                            label: 'ปวดท้องเรื้อรัง', 
+                                            description: 'ปวดท้อง ท้องอืด ท้องเสีย-ท้องผูกสลับกัน',
+                                            icon: 'fas fa-stomach',
+                                            color: 'yellow'
+                                        },
+                                        { 
+                                            key: 'symptomWeightLoss', 
+                                            label: 'น้ำหนักลดโดยไม่ทราบสาเหตุ', 
+                                            description: 'น้ำหนักลดมากกว่า 5% ใน 6 เดือน',
+                                            icon: 'fas fa-weight',
+                                            color: 'purple'
+                                        },
+                                        { 
+                                            key: 'symptomFatigue', 
+                                            label: 'เหนื่อยล้าผิดปกติ', 
+                                            description: 'เหนื่อยล้าที่ไม่หายด้วยการพักผ่อน',
+                                            icon: 'fas fa-tired',
+                                            color: 'blue'
+                                        }
+                                    ].map((symptom) => (
+                                        <div key={symptom.key} className={`radio-card ${formData[symptom.key] ? 'selected border-red-300 bg-red-50' : ''} p-4 rounded-lg`}>
+                                            <div className="flex items-start justify-between">
+                                                <div className="flex items-start space-x-4">
+                                                    <div className={`w-12 h-12 rounded-full bg-${symptom.color}-100 flex items-center justify-center flex-shrink-0 mt-1`}>
+                                                        <i className={`${symptom.icon} text-${symptom.color}-600 text-lg`}></i>
+                                                    </div>
+                                                    <div className="flex-grow">
+                                                        <h4 className="font-semibold text-gray-800 mb-1">{symptom.label}</h4>
+                                                        <p className="text-sm text-gray-600">{symptom.description}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex space-x-4 ml-4">
+                                                    <label className="flex items-center space-x-2 cursor-pointer">
+                                                        <input
+                                                            type="radio"
+                                                            name={symptom.key}
+                                                            value="true"
+                                                            checked={formData[symptom.key] === true}
+                                                            onChange={() => handleInputChange(symptom.key, true)}
+                                                            className="w-5 h-5 text-red-600"
+                                                        />
+                                                        <span className="text-sm font-medium text-gray-700">มี</span>
+                                                    </label>
+                                                    <label className="flex items-center space-x-2 cursor-pointer">
+                                                        <input
+                                                            type="radio"
+                                                            name={symptom.key}
+                                                            value="false"
+                                                            checked={formData[symptom.key] === false}
+                                                            onChange={() => handleInputChange(symptom.key, false)}
+                                                            className="w-5 h-5 text-gray-600"
+                                                        />
+                                                        <span className="text-sm font-medium text-gray-700">ไม่มี</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+
+                    default:
+                        return null;
+                }
+            };
+
+            if (loading) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 via-purple-600 to-blue-800">
+                        <div className="glass-card rounded-2xl p-12 text-center max-w-md mx-4">
+                            <div className="animate-spin w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-6"></div>
+                            <h2 className="text-2xl font-bold text-gray-800 mb-4">กำลังประเมินความเสี่ยง</h2>
+                            <p className="text-gray-600">กรุณารอสักครู่ ระบบกำลังประมวลผลข้อมูลของคุณ...</p>
+                            <div className="mt-6 bg-gray-200 rounded-full h-2">
+                                <div className="bg-blue-600 h-2 rounded-full pulse-animation" style={{width: '100%'}}></div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (results) {
+                const bmiInfo = results.bmi ? getBMIStatus(parseFloat(results.bmi)) : null;
+
+                return (
+                    <div className="min-h-screen bg-gray-50 py-8">
+                        <div className="max-w-7xl mx-auto px-4">
+                            {/* Header */}
+                            <div className="text-center mb-8">
+                                <div className="inline-flex items-center space-x-3 mb-4">
+                                    <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center">
+                                        <i className="fas fa-clipboard-check text-white text-xl"></i>
+                                    </div>
+                                    <div>
+                                        <h1 className="text-3xl font-bold text-gray-800 header-font">ผลการประเมินความเสี่ยงมะเร็ง</h1>
+                                        <p className="text-gray-600">Cancer Risk Assessment Report</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center justify-center space-x-6 text-sm text-gray-500">
+                                    <span><i className="fas fa-calendar mr-2"></i>{results.timestamp.toLocaleDateString('th-TH')}</span>
+                                    <span><i className="fas fa-clock mr-2"></i>{results.timestamp.toLocaleTimeString('th-TH')}</span>
+                                    <span><i className="fas fa-user mr-2"></i>{formData.age} ปี</span>
+                                    <span><i className="fas fa-venus-mars mr-2"></i>{formData.gender === 'female' ? 'หญิง' : 'ชาย'}</span>
+                                </div>
+                            </div>
+
+                            {/* Risk Summary Dashboard */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                                {Object.entries(results.riskAssessment).map(([cancer, assessment]) => {
+                                    const getRiskColorClass = (level) => {
+                                        switch (level) {
+                                            case 'สูงมาก': return 'from-red-500 to-red-600 text-white';
+                                            case 'สูง': return 'from-orange-500 to-orange-600 text-white';
+                                            case 'ปานกลาง': return 'from-yellow-500 to-yellow-600 text-white';
+                                            case 'ต่ำ': return 'from-green-500 to-green-600 text-white';
+                                            default: return 'from-gray-500 to-gray-600 text-white';
+                                        }
+                                    };
+
+                                    const getCancerIcon = (type) => {
+                                        switch (type) {
+                                            case 'breast': return 'fas fa-ribbon';
+                                            case 'cervical': return 'fas fa-venus';
+                                            case 'colorectal': return 'fas fa-stomach';
+                                            case 'liver': return 'fas fa-liver';
+                                            case 'lung': return 'fas fa-lungs';
+                                            case 'prostate': return 'fas fa-mars';
+                                            default: return 'fas fa-circle';
+                                        }
+                                    };
+
+                                    const getCancerName = (type) => {
+                                        const names = {
+                                            breast: 'เต้านม',
+                                            cervical: 'ปากมดลูก',
+                                            colorectal: 'ลำไส้ใหญ่',
+                                            liver: 'ตับ',
+                                            lung: 'ปอด',
+                                            prostate: 'ต่อมลูกหมาก'
+                                        };
+                                        return names[type] || type;
+                                    };
+
+                                    return (
+                                        <div key={cancer} className="section-card p-4 text-center">
+                                            <div className={`w-12 h-12 mx-auto mb-3 rounded-full bg-gradient-to-r ${getRiskColorClass(assessment.level)} flex items-center justify-center`}>
+                                                <i className={`${getCancerIcon(cancer)} text-lg`}></i>
+                                            </div>
+                                            <h3 className="font-semibold text-gray-800 text-sm mb-1">มะเร็ง{getCancerName(cancer)}</h3>
+                                            <div className={`inline-block px-2 py-1 rounded-full text-xs font-medium bg-gradient-to-r ${getRiskColorClass(assessment.level)}`}>
+                                                {assessment.level}
+                                            </div>
+                                            <div className="mt-2 text-xs text-gray-500">
+                                                คะแนน: {assessment.score.toFixed(1)}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* BMI Card */}
+                            {bmiInfo && (
+                                <div className="section-card p-6 mb-8">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center space-x-4">
+                                            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                                                <i className="fas fa-weight text-blue-600 text-lg"></i>
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-gray-800">ดัชนีมวลกาย (BMI)</h3>
+                                                <p className="text-sm text-gray-600">Body Mass Index Assessment</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="text-2xl font-bold text-gray-800">{results.bmi}</div>
+                                            <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${bmiInfo.color} ${bmiInfo.bg}`}>
+                                                {bmiInfo.status}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Detailed Recommendations */}
+                            <div className="space-y-6">
+                                <h2 className="text-2xl font-bold text-gray-800 header-font mb-6">
+                                    <i className="fas fa-stethoscope mr-3 text-blue-600"></i>
+                                    คำแนะนำการคัดกรองตาม NCI Guidelines
+                                </h2>
+
+                                {results.recommendations.map((recommendation, index) => {
+                                    const getUrgencyColor = (urgency) => {
+                                        switch (urgency) {
+                                            case 'เร่งด่วน': return 'border-red-500 bg-red-50';
+                                            case 'สูงมาก': return 'border-red-400 bg-red-50';
+                                            case 'สูง': return 'border-orange-400 bg-orange-50';
+                                            case 'ปานกลาง': return 'border-yellow-400 bg-yellow-50';
+                                            default: return 'border-green-400 bg-green-50';
+                                        }
+                                    };
+
+                                    return (
+                                        <div key={index} className={`section-card ${getUrgencyColor(recommendation.urgency)} border-2 p-6`}>
+                                            <div className="flex items-start justify-between mb-4">
+                                                <div className="flex items-center space-x-3">
+                                                    <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">
+                                                        {index + 1}
+                                                    </div>
+                                                    <div>
+                                                        <h3 className="text-xl font-bold text-gray-800">{recommendation.type}</h3>
+                                                        <p className="text-sm text-gray-600">{recommendation.guidelines}</p>
+                                                    </div>
+                                                </div>
+                                                <span className={`px-4 py-2 rounded-full text-sm font-bold border-2 ${
+                                                    recommendation.urgency === 'เร่งด่วน' ? 'bg-red-100 text-red-800 border-red-200' :
+                                                    recommendation.urgency === 'สูงมาก' ? 'bg-red-100 text-red-700 border-red-200' :
+                                                    recommendation.urgency === 'สูง' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                                                    recommendation.urgency === 'ปานกลาง' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
+                                                    'bg-green-100 text-green-700 border-green-200'
+                                                }`}>
+                                                    {recommendation.urgency}
+                                                </span>
+                                            </div>
+
+                                            <div className="space-y-3">
+                                                {recommendation.recommendations.map((rec, i) => {
+                                                    const isUrgent = rec.includes('🚨') || rec.includes('🔴');
+                                                    return (
+                                                        <div key={i} className={`flex items-start space-x-3 p-3 rounded-lg ${
+                                                            isUrgent ? 'bg-red-100 border border-red-200' : 'bg-white border border-gray-200'
+                                                        }`}>
+                                                            <div className={`w-2 h-2 rounded-full mt-2 ${
+                                                                isUrgent ? 'bg-red-500' : 'bg-blue-500'
+                                                            }`}></div>
+                                                            <span className={`text-gray-700 ${isUrgent ? 'font-semibold' : ''}`}>
+                                                                {rec.replace(/[🔴🟡🟢📅🔍🩺✋📝🧪🦠💉🚨🩸💊🚫📊🍺🫁🚭😷📸🏃‍♀️🏃‍♂️💬🥗]/g, '').trim()}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="mt-12 text-center space-y-4">
+                                <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                                    <button
+                                        onClick={exportAdvancedPDF}
+                                        className="px-8 py-4 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+                                    >
+                                        <i className="fas fa-download mr-2"></i>
+                                        ดาวน์โหลดรายงาน PDF
+                                    </button>
+
+                                    <button
+                                        onClick={resetSystem}
+                                        className="px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
+                                    >
+                                        <i className="fas fa-redo mr-2"></i>
+                                        ประเมินใหม่
+                                    </button>
+                                </div>
+
+                                <p className="text-sm text-gray-500 max-w-2xl mx-auto leading-relaxed">
+                                    <i className="fas fa-info-circle mr-1"></i>
+                                    ผลการประเมินนี้เป็นเครื่องมือช่วยให้ความรู้เบื้องต้นเท่านั้น ไม่สามารถใช้วินิจฉัยโรคได้ 
+                                    แนะนำให้ปรึกษาแพทย์เพื่อการตรวจสอบและรักษาที่ถูกต้องเหมาะสม
+                                </p>
+                            </div>
+
+                            {/* NCI Footer */}
+                            <div className="mt-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-6 text-white text-center">
+                                <h3 className="font-bold text-lg mb-2">National Cancer Institute Thailand</h3>
+                                <p className="text-blue-100 text-sm">
+                                    ระบบประเมินความเสี่ยงมะเร็งตามแนวทางคลินิกของสถาบันมะเร็งแห่งชาติ
+                                </p>
+                                <div className="mt-4 text-xs text-blue-200">
+                                    📧 info@nci.go.th | 📞 02-354-7600 | 🌐 www.nci.go.th
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-blue-800">
+                    <div className="max-w-4xl mx-auto px-4 py-8">
+                        {/* NCI Header */}
+                        <div className="nci-header rounded-2xl p-8 mb-8 text-center text-white relative overflow-hidden">
+                            <div className="relative z-10">
+                                <div className="flex items-center justify-center space-x-4 mb-4">
+                                    <div className="w-16 h-16 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
+                                        <i className="fas fa-hospital-symbol text-2xl"></i>
+                                    </div>
+                                    <div>
+                                        <h1 className="text-4xl font-bold header-font">ระบบประเมินความเสี่ยงมะเร็ง</h1>
+                                        <p className="text-blue-100 text-lg">Cancer Risk Assessment System</p>
+                                    </div>
+                                </div>
+                                <p className="text-blue-100 max-w-2xl mx-auto">
+                                    ระบบประเมินความเสี่ยงตามแนวทางคลินิกของสถาบันมะเร็งแห่งชาติ เพื่อการคัดกรองและป้องกันมะเร็งอย่างมีประสิทธิภาพ
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Progress Indicator */}
+                        <div className="mb-8">
+                            <div className="flex items-center justify-between mb-6">
+                                <div className="flex items-center space-x-4">
+                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white`} 
+                                         style={{background: steps[currentStep].color}}>
+                                        <i className={steps[currentStep].icon}></i>
+                                    </div>
+                                    <div>
+                                        <h2 className="text-2xl font-bold text-white header-font">{steps[currentStep].title}</h2>
+                                        <p className="text-white opacity-80">{steps[currentStep].subtitle}</p>
+                                    </div>
+                                </div>
+                                <div className="text-white opacity-75 font-medium">
+                                    {currentStep + 1} / {steps.length}
+                                </div>
+                            </div>
+
+                            {/* Progress Bar */}
+                            <div className="w-full bg-white bg-opacity-20 rounded-full h-3 overflow-hidden">
+                                <div 
+                                    className="step-indicator h-full transition-all duration-500"
+                                    style={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}
+                                ></div>
+                            </div>
+
+                            {/* Step Indicators */}
+                            <div className="flex justify-between mt-4">
+                                {steps.map((step, index) => (
+                                    <div key={index} className="flex flex-col items-center">
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-300 ${
+                                            index <= currentStep 
+                                                ? 'bg-white text-blue-600 shadow-lg' 
+                                                : 'bg-white bg-opacity-20 text-white'
+                                        }`}>
+                                            {index + 1}
+                                        </div>
+                                        <p className={`text-xs mt-2 text-center max-w-20 ${
+                                            index <= currentStep ? 'text-white font-medium' : 'text-white text-opacity-60'
+                                        }`}>
+                                            {step.title}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Form Card */}
+                        <div className="glass-card rounded-2xl p-8 mb-6">
+                            {renderStepContent()}
+
+                            {/* Navigation */}
+                            <div className="flex justify-between mt-10">
+                                <button
+                                    onClick={prevStep}
+                                    disabled={currentStep === 0}
+                                    className={`px-6 py-3 rounded-xl font-semibold transition-all duration-300 flex items-center space-x-2 ${
+                                        currentStep === 0 
+                                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:shadow-lg transform hover:scale-105'
+                                    }`}
+                                >
+                                    <i className="fas fa-chevron-left"></i>
+                                    <span>ย้อนกลับ</span>
+                                </button>
+
+                                <button
+                                    onClick={nextStep}
+                                    className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg flex items-center space-x-2"
+                                >
+                                    <span>{currentStep === steps.length - 1 ? 'ประเมินความเสี่ยง' : 'ถัดไป'}</span>
+                                    <i className={currentStep === steps.length - 1 ? 'fas fa-calculator' : 'fas fa-chevron-right'}></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Security Footer */}
+                        <div className="text-center">
+                            <p className="text-white text-opacity-75 text-sm flex items-center justify-center space-x-2">
+                                <i className="fas fa-shield-alt"></i>
+                                <span>ข้อมูลของคุณได้รับการปกป้องและไม่ถูกเก็บในระบบ</span>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<NCICancerScreeningSystem />, document.getElementById('root'));
+    </script>
+</body>
+</html>
