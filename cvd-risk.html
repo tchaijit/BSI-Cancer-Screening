@@ -1280,10 +1280,12 @@ ${results.recommendations[0].items.slice(0, 3).map(item => `• ${item}`).join('
                 mobileMenuBtn.addEventListener('click', function() {
                     mobileMenu.classList.toggle('hidden');
                     const icon = mobileMenuBtn.querySelector('i');
-                    if (mobileMenu.classList.contains('hidden')) {
-                        icon.className = 'fas fa-bars text-xl';
-                    } else {
-                        icon.className = 'fas fa-times text-xl';
+                    if (icon) {
+                        if (mobileMenu.classList.contains('hidden')) {
+                            icon.className = 'fas fa-bars text-xl';
+                        } else {
+                            icon.className = 'fas fa-times text-xl';
+                        }
                     }
                 });
                 
@@ -1292,7 +1294,9 @@ ${results.recommendations[0].items.slice(0, 3).map(item => `• ${item}`).join('
                     if (!mobileMenuBtn.contains(event.target) && !mobileMenu.contains(event.target)) {
                         mobileMenu.classList.add('hidden');
                         const icon = mobileMenuBtn.querySelector('i');
-                        icon.className = 'fas fa-bars text-xl';
+                        if (icon) {
+                            icon.className = 'fas fa-bars text-xl';
+                        }
                     }
                 });
             }

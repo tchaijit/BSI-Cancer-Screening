@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="format-detection" content="telephone=no">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="theme-color" content="#1e3a8a">
@@ -3167,10 +3168,12 @@ ${riskSummary}
                 mobileMenuBtn.addEventListener('click', function() {
                     mobileMenu.classList.toggle('hidden');
                     const icon = mobileMenuBtn.querySelector('i');
-                    if (mobileMenu.classList.contains('hidden')) {
-                        icon.className = 'fas fa-bars text-xl';
-                    } else {
-                        icon.className = 'fas fa-times text-xl';
+                    if (icon) {
+                        if (mobileMenu.classList.contains('hidden')) {
+                            icon.className = 'fas fa-bars text-xl';
+                        } else {
+                            icon.className = 'fas fa-times text-xl';
+                        }
                     }
                 });
                 
@@ -3179,7 +3182,9 @@ ${riskSummary}
                     if (!mobileMenuBtn.contains(event.target) && !mobileMenu.contains(event.target)) {
                         mobileMenu.classList.add('hidden');
                         const icon = mobileMenuBtn.querySelector('i');
-                        icon.className = 'fas fa-bars text-xl';
+                        if (icon) {
+                            icon.className = 'fas fa-bars text-xl';
+                        }
                     }
                 });
             }
