@@ -509,6 +509,7 @@ ${results.recommendations.slice(0, 3).map(item => `• ${item}`).join('\n')}
                 doc.setTextColor(100, 100, 100);
                 doc.text('Reference: Community Based Assessment Checklist (CBAC) & Finnish Diabetes Risk Score (FINDRISC)', 20, 270);
                 doc.text('Ministry of Public Health, Thailand', 20, 276);
+                doc.text('Developed by BSI Medical Informatics Development', 20, 282);
                 
                 doc.save(`NCD_Risk_Assessment_${new Date().toISOString().split('T')[0]}.pdf`);
             };
@@ -1045,7 +1046,8 @@ ${results.recommendations.slice(0, 3).map(item => `• ${item}`).join('\n')}
                 // Footer
                 h('footer', { className: 'text-center mt-16 text-gray-500 text-sm' },
                     h('p', {}, 'กรมอนามัย กระทรวงสาธารณสุข | Department of Health, Ministry of Public Health'),
-                    h('p', { className: 'mt-2' }, 'ระบบนี้เป็นเครื่องมือคัดกรองเบื้องต้น ไม่สามารถทดแทนการตรวจวินิจฉัยทางการแพทย์')
+                    h('p', { className: 'mt-2' }, 'ระบบนี้เป็นเครื่องมือคัดกรองเบื้องต้น ไม่สามารถทดแทนการตรวจวินิจฉัยทางการแพทย์'),
+                    h('p', { className: 'mt-3 text-xs text-gray-400' }, 'พัฒนาโดย BSI Medical Informatics Development')
                 )
             );
         };

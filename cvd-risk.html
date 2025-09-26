@@ -692,6 +692,7 @@ ${results.recommendations[0].items.slice(0, 3).map(item => `• ${item}`).join('
                     doc.setTextColor(100, 100, 100);
                     doc.text('This assessment is for educational purposes only. Please consult a healthcare professional.', 20, 270);
                     doc.text('Reference: Thai CPG for CVD Risk Assessment | National Heart Association Thailand', 20, 276);
+                    doc.text('Developed by BSI Medical Informatics Development', 20, 282);
 
                     doc.save(`CVD_Risk_Assessment_${new Date().toISOString().split('T')[0]}.pdf`);
                 } catch (error) {
@@ -1060,7 +1061,8 @@ ${results.recommendations[0].items.slice(0, 3).map(item => `• ${item}`).join('
                             h('div', { className: 'text-sm' }, [
                                 h('p', { className: 'font-semibold' }, 'อ้างอิงข้อมูลจาก'),
                                 h('p', {}, 'Thai Clinical Practice Guidelines for CVD Risk Assessment'),
-                                h('p', {}, 'National Heart Association Thailand')
+                                h('p', {}, 'National Heart Association Thailand'),
+                                h('p', { className: 'text-xs text-gray-400 mt-3' }, 'พัฒนาโดย BSI Medical Informatics Development')
                             ])
                         ])
                     ])

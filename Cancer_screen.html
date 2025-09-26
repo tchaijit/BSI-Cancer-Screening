@@ -1708,9 +1708,11 @@ ${riskSummary}
                 try {
                     const disclaimerLines = doc.splitTextToSize(disclaimer, 170);
                     doc.text(disclaimerLines, 20, yPosition + 10);
+                    doc.text('Developed by BSI Medical Informatics Development', 20, yPosition + 25);
                 } catch (error) {
                     // Fallback if splitTextToSize fails
                     doc.text('Disclaimer: For educational purposes only. Consult healthcare providers.', 20, yPosition + 10);
+                    doc.text('Developed by BSI Medical Informatics Development', 20, yPosition + 20);
                 }
 
                     doc.save('cancer-risk-assessment-report.pdf');
@@ -3049,7 +3051,8 @@ ${riskSummary}
                         ]),
                         h('div', { className: 'border-t border-gray-200 pt-3' }, [
                             h('p', { className: 'text-gray-700 font-semibold text-sm' }, 'อ้างอิงข้อมูลจาก สถาบันมะเร็งแห่งชาติ'),
-                            h('p', { className: 'text-gray-600 text-sm' }, 'National Cancer Institute Thailand')
+                            h('p', { className: 'text-gray-600 text-sm' }, 'National Cancer Institute Thailand'),
+                            h('p', { className: 'text-gray-500 text-xs mt-2' }, 'พัฒนาโดย BSI Medical Informatics Development')
                         ])
                     ])
                     ])
