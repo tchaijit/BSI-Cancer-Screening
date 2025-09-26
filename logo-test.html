@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logo Test - ทดสอบการแสดงผลโลโก้</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            padding: 20px; 
+            background: #f5f5f5; 
+        }
+        .test-card { 
+            background: white; 
+            border-radius: 10px; 
+            padding: 20px; 
+            margin: 20px 0; 
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+        }
+        .logo-test { 
+            display: flex; 
+            align-items: center; 
+            margin: 10px 0; 
+        }
+        .logo-test img { 
+            margin-right: 15px; 
+            border: 2px solid #ddd; 
+            border-radius: 5px; 
+        }
+        .status { 
+            padding: 5px 10px; 
+            border-radius: 5px; 
+            font-weight: bold; 
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <h1>🔍 ทดสอบการแสดงผลโลโก้ (Logo Display Test)</h1>
+    
+    <div class="test-card">
+        <h2>📁 Local Logo Tests</h2>
+        
+        <div class="logo-test">
+            <img src="logo.png" width="64" height="64" alt="Local Logo" onerror="this.style.display='none'; this.nextSibling.style.display='inline';">
+            <span style="display:none;" class="status error">❌ Local logo.png not found</span>
+            <div>
+                <h3>logo.png (Local File)</h3>
+                <p>Used in: index.html, ncd-risk.html</p>
+                <span class="status success" id="local-status">✅ Loading...</span>
+            </div>
+        </div>
+        
+        <div class="logo-test">
+            <img src="./logo.png" width="64" height="64" alt="Local Logo with Path" onerror="this.style.display='none'; this.nextSibling.style.display='inline';">
+            <span style="display:none;" class="status error">❌ ./logo.png not found</span>
+            <div>
+                <h3>./logo.png (Relative Path)</h3>
+                <p>Used in: Cancer_screen.html (PDF generation)</p>
+                <span class="status success" id="relative-status">✅ Loading...</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="test-card">
+        <h2>🌐 External Logo Tests</h2>
+        
+        <div class="logo-test">
+            <img src="https://www.nci.go.th/th/image/layout/nci-logo.png" width="64" height="64" alt="NCI Logo" 
+                 onerror="this.style.display='none'; this.nextSibling.style.display='inline';">
+            <span style="display:none;" class="status error">❌ External NCI logo not accessible</span>
+            <div>
+                <h3>NCI Logo (External)</h3>
+                <p>https://www.nci.go.th/th/image/layout/nci-logo.png</p>
+                <span class="status error" id="external-status">❌ 404 Not Found (Fixed in code)</span>
+            </div>
+        </div>
+    </div>
+    
+    <div class="test-card">
+        <h2>📋 File Status Summary</h2>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div>
+                <h3>✅ Fixed Files</h3>
+                <ul>
+                    <li><strong>index.html</strong> - Uses local logo.png ✓</li>
+                    <li><strong>ncd-risk.html</strong> - Uses local logo.png ✓</li>
+                </ul>
+            </div>
+            
+            <div>
+                <h3>ℹ️ Other Files</h3>
+                <ul>
+                    <li><strong>Cancer_screen.html</strong> - Uses ./logo.png (working) ✓</li>
+                    <li><strong>cvd-risk.html</strong> - Uses icon (no image logo) ✓</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <div class="test-card">
+        <h2>🔧 Recommendations</h2>
+        <div class="status info">
+            <p><strong>All logo references have been standardized:</strong></p>
+            <ul style="margin: 10px 0; padding-left: 20px;">
+                <li>✅ Removed broken external NCI logo links</li>
+                <li>✅ Updated to use local logo.png file</li>
+                <li>✅ Consistent sizing across all pages</li>
+                <li>✅ Proper alt text for accessibility</li>
+            </ul>
+        </div>
+    </div>
+    
+    <div class="test-card">
+        <h2>🔙 Navigation</h2>
+        <p>
+            <a href="index.html" style="margin-right: 15px; color: #007bff;">← กลับหน้าหลัก</a>
+            <a href="Cancer_screen.html" style="margin-right: 15px; color: #007bff;">Cancer Assessment</a>
+            <a href="cvd-risk.html" style="margin-right: 15px; color: #007bff;">CVD Assessment</a>
+            <a href="ncd-risk.html" style="color: #007bff;">NCD Assessment</a>
+        </p>
+    </div>
+    
+    <script>
+        // Test logo loading
+        window.addEventListener('load', function() {
+            const logoTests = [
+                { img: document.querySelector('img[src="logo.png"]'), statusId: 'local-status' },
+                { img: document.querySelector('img[src="./logo.png"]'), statusId: 'relative-status' }
+            ];
+            
+            logoTests.forEach(test => {
+                const statusEl = document.getElementById(test.statusId);
+                if (test.img && test.img.complete && test.img.naturalWidth > 0) {
+                    statusEl.textContent = '✅ Loaded Successfully';
+                    statusEl.className = 'status success';
+                } else {
+                    statusEl.textContent = '❌ Failed to Load';
+                    statusEl.className = 'status error';
+                }
+            });
+        });
+    </script>
+</body>
+</html>

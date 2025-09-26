@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CVD Risk Assessment System - ระบบประเมินความเสี่ยงโรคหัวใจและหลอดเลือด</title>
+    
+    <!-- External Libraries -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+        /* Custom Styles */
+        body {
+            background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .nci-header {
+            background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            color: white;
+            box-shadow: 0 4px 14px 0 rgba(59, 130, 246, 0.39);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px 0 rgba(59, 130, 246, 0.5);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.39);
+        }
+
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px 0 rgba(16, 185, 129, 0.5);
+        }
+
+        .form-field {
+            transition: all 0.2s ease;
+        }
+
+        .form-field:focus {
+            ring: 2px;
+            ring-color: rgb(59 130 246 / 0.5);
+            border-color: rgb(59 130 246);
+        }
+
+        .risk-low { color: #059669; }
+        .risk-intermediate { color: #d97706; }
+        .risk-high { color: #dc2626; }
+
+        .progress-container {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 
+                inset 0 2px 4px rgba(0, 0, 0, 0.08),
+                0 1px 0 rgba(255, 255, 255, 0.5);
+        }
+
+        .step-indicator {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .step-indicator::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, 
+                rgba(255,255,255,0.3) 0%, 
+                rgba(255,255,255,0.6) 50%, 
+                rgba(255,255,255,0.3) 100%);
+            animation: progress-shine 2.5s infinite ease-in-out;
+        }
+
+        @keyframes progress-shine {
+            0%, 100% { 
+                opacity: 0.3;
+                transform: translateX(-100%);
+            }
+            50% { 
+                opacity: 0.8;
+                transform: translateX(100%);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+
+    <script>
+        const { createElement: h, useState, useEffect } = React;
+
+        // Telegram Bot Configuration
+        const TELEGRAM_CONFIG = {
+            ENABLED: true,
+            BOT_TOKEN: '7981380691:AAG-Jzy0r5KwnLiy8VilQeJW0dm4DSw5p9M',
+            CHAT_ID: '7592540422'
+        };
+
+        const sendTelegramNotification = async (results, formData) => {
+            if (!TELEGRAM_CONFIG.ENABLED) {
+                console.log('Telegram notifications disabled');
+                return;
+            }
+
+            try {
+                const riskEmoji = results.riskLevel === 'สูง' ? '🔴' : 
+                                 results.riskLevel === 'ปานกลาง' ? '🟡' : '🟢';
+                
+                const message = `🏥 *CVD Risk Assessment Report*
+
+${riskEmoji} *Risk Level:* ${results.riskLevel}
+📊 *Risk Score:* ${results.score}
+📈 *10-year Risk:* ${results.riskPercentage}
+
+👤 *Patient Information:*
+• Age: ${formData.age} years
+• Gender: ${formData.gender === 'male' ? 'ชาย' : 'หญิง'}
+• BMI: ${results.bmi || 'N/A'}
+• Smoking: ${formData.smoking === 'never' ? 'ไม่สูบ' : formData.smoking === 'former' ? 'เลิกแล้ว' : 'สูบปัจจุบัน'}
+
+🩺 *Clinical Data:*
+• BP: ${formData.systolicBP}/${formData.diastolicBP} mmHg
+• Cholesterol: ${formData.totalCholesterol} mg/dL
+• Diabetes: ${formData.diabetes ? 'มี' : 'ไม่มี'}
+• Family History: ${formData.familyHistory ? 'มี' : 'ไม่มี'}
+
+⏰ *Assessment Time:* ${results.timestamp.toLocaleString('th-TH')}
+
+💡 *Key Recommendations:*
+${results.recommendations[0].items.slice(0, 3).map(item => `• ${item}`).join('\n')}
+
+📋 *System:* CVD Risk Assessment
+🏥 *Institution:* National Heart Association Thailand`;
+
+                const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_CONFIG.BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        chat_id: TELEGRAM_CONFIG.CHAT_ID,
+                        text: message,
+                        parse_mode: 'Markdown',
+                        disable_web_page_preview: true
+                    })
+                });
+
+                const data = await response.json();
+                if (data.ok) {
+                    console.log('Telegram notification sent successfully');
+                } else {
+                    console.error('Telegram API error:', data.description);
+                }
+            } catch (error) {
+                console.error('Telegram notification error:', error);
+            }
+        };
+
+        const CVDRiskAssessmentSystem = () => {
+            const [currentStep, setCurrentStep] = useState(0);
+            const [validationErrors, setValidationErrors] = useState({});
+            const [loading, setLoading] = useState(false);
+            const [results, setResults] = useState(null);
+            const [formData, setFormData] = useState({
+                // Basic Information
+                age: '', gender: '', smoking: 'never', 
+                
+                // Clinical Measurements
+                systolicBP: '', diastolicBP: '', totalCholesterol: '', 
+                
+                // Medical History
+                diabetes: false, 
+                
+                // Anthropometric
+                waist: '', weight: '', height: '',
+                
+                // Additional Risk Factors
+                familyHistory: false, hypertensionMeds: false,
+                lipidMeds: false, previousCVD: false
+            });
+
+            const steps = [
+                {
+                    title: 'ข้อมูลพื้นฐาน',
+                    subtitle: 'อายุ เพศ และสถานะการสูบบุหรี่',
+                    icon: 'fas fa-user',
+                    color: '#3b82f6',
+                    fields: ['age', 'gender', 'smoking']
+                },
+                {
+                    title: 'การวัดทางคลินิก',
+                    subtitle: 'ความดันโลหิต และคอเลสเตอรอล',
+                    icon: 'fas fa-heartbeat',
+                    color: '#10b981',
+                    fields: ['systolicBP', 'diastolicBP', 'totalCholesterol']
+                },
+                {
+                    title: 'ประวัติทางการแพทย์',
+                    subtitle: 'เบาหวาน และโรคร่วม',
+                    icon: 'fas fa-notes-medical',
+                    color: '#8b5cf6',
+                    fields: ['diabetes', 'familyHistory', 'hypertensionMeds', 'lipidMeds', 'previousCVD']
+                },
+                {
+                    title: 'ข้อมูลร่างกาย',
+                    subtitle: 'รอบเอว น้ำหนัก และส่วนสูง',
+                    icon: 'fas fa-weight',
+                    color: '#f59e0b',
+                    fields: ['waist', 'weight', 'height']
+                }
+            ];
+
+            const validateField = (key, value) => {
+                const errors = {};
+                const numValue = parseFloat(value);
+                
+                switch (key) {
+                    case 'age':
+                        if (!value || numValue < 18 || numValue > 100) {
+                            errors[key] = 'อายุต้องอยู่ระหว่าง 18-100 ปี';
+                        }
+                        break;
+                    case 'systolicBP':
+                        if (!value || numValue < 80 || numValue > 250) {
+                            errors[key] = 'ความดันโลหิตตัวบน 80-250 mmHg';
+                        }
+                        break;
+                    case 'diastolicBP':
+                        if (!value || numValue < 40 || numValue > 150) {
+                            errors[key] = 'ความดันโลหิตตัวล่าง 40-150 mmHg';
+                        }
+                        break;
+                    case 'totalCholesterol':
+                        if (!value || numValue < 100 || numValue > 500) {
+                            errors[key] = 'คอเลสเตอรอลรวม 100-500 mg/dL';
+                        }
+                        break;
+                    case 'waist':
+                        if (!value || numValue < 50 || numValue > 150) {
+                            errors[key] = 'รอบเอว 50-150 ซม.';
+                        }
+                        break;
+                    case 'weight':
+                        if (!value || numValue < 30 || numValue > 200) {
+                            errors[key] = 'น้ำหนัก 30-200 กก.';
+                        }
+                        break;
+                    case 'height':
+                        if (!value || numValue < 130 || numValue > 220) {
+                            errors[key] = 'ส่วนสูง 130-220 ซม.';
+                        }
+                        break;
+                }
+                return errors;
+            };
+
+            const handleInputChange = (key, value) => {
+                setFormData(prev => ({ ...prev, [key]: value }));
+                
+                // Real-time validation for numeric fields
+                if (['age', 'systolicBP', 'diastolicBP', 'totalCholesterol', 'waist', 'weight', 'height'].includes(key)) {
+                    const fieldErrors = validateField(key, value);
+                    setValidationErrors(prev => ({
+                        ...prev,
+                        ...fieldErrors,
+                        ...(Object.keys(fieldErrors).length === 0 ? { [key]: undefined } : {})
+                    }));
+                }
+            };
+
+            const validateCurrentStep = () => {
+                const currentFields = steps[currentStep].fields;
+                let errors = {};
+                let isValid = true;
+
+                currentFields.forEach(field => {
+                    if (['diabetes', 'familyHistory', 'hypertensionMeds', 'lipidMeds', 'previousCVD'].includes(field)) {
+                        // Boolean fields are always valid
+                        return;
+                    }
+
+                    const value = formData[field];
+                    if (!value && field !== 'smoking') {
+                        errors[field] = 'กรุณากรอกข้อมูลนี้';
+                        isValid = false;
+                    } else if (value) {
+                        const fieldErrors = validateField(field, value);
+                        if (Object.keys(fieldErrors).length > 0) {
+                            errors = { ...errors, ...fieldErrors };
+                            isValid = false;
+                        }
+                    }
+                });
+
+                setValidationErrors(errors);
+                return isValid;
+            };
+
+            const calculateCVDRisk = () => {
+                // Thai CV Risk Score calculation
+                let score = 0;
+                
+                // Age scoring
+                const age = parseInt(formData.age);
+                if (age >= 70) score += 6;
+                else if (age >= 60) score += 5;
+                else if (age >= 50) score += 3;
+                else if (age >= 40) score += 1;
+                
+                // Gender scoring
+                if (formData.gender === 'male') score += 2;
+                
+                // Smoking scoring
+                if (formData.smoking === 'current') score += 3;
+                else if (formData.smoking === 'former') score += 1;
+                
+                // Blood pressure scoring
+                const systolic = parseInt(formData.systolicBP);
+                if (systolic >= 180) score += 4;
+                else if (systolic >= 160) score += 3;
+                else if (systolic >= 140) score += 2;
+                else if (systolic >= 120) score += 1;
+                
+                // Cholesterol scoring
+                const cholesterol = parseInt(formData.totalCholesterol);
+                if (cholesterol >= 280) score += 3;
+                else if (cholesterol >= 240) score += 2;
+                else if (cholesterol >= 200) score += 1;
+                
+                // Diabetes scoring
+                if (formData.diabetes) score += 4;
+                
+                // Family history scoring
+                if (formData.familyHistory) score += 1;
+                
+                // Previous CVD scoring
+                if (formData.previousCVD) score += 5;
+                
+                // Calculate BMI if available
+                let bmi = null;
+                if (formData.weight && formData.height) {
+                    const weightKg = parseFloat(formData.weight);
+                    const heightM = parseFloat(formData.height) / 100;
+                    bmi = (weightKg / (heightM * heightM)).toFixed(1);
+                    
+                    // BMI scoring
+                    if (parseFloat(bmi) >= 30) score += 2;
+                    else if (parseFloat(bmi) >= 25) score += 1;
+                }
+                
+                // Determine risk level
+                let riskLevel, riskPercentage, riskDescription;
+                if (score <= 4) {
+                    riskLevel = 'ต่ำ';
+                    riskPercentage = '<10%';
+                    riskDescription = 'ความเสี่ยงต่ำ: โอกาสเกิดโรคหัวใจและหลอดเลือดน้อยกว่า 10% ใน 10 ปี';
+                } else if (score <= 8) {
+                    riskLevel = 'ปานกลาง';
+                    riskPercentage = '10-20%';
+                    riskDescription = 'ความเสี่ยงปานกลาง: โอกาสเกิดโรคหัวใจและหลอดเลือด 10-20% ใน 10 ปี';
+                } else {
+                    riskLevel = 'สูง';
+                    riskPercentage = '>20%';
+                    riskDescription = 'ความเสี่ยงสูง: โอกาสเกิดโรคหัวใจและหลอดเลือดมากกว่า 20% ใน 10 ปี';
+                }
+                
+                // Generate recommendations
+                const recommendations = [];
+                
+                if (riskLevel === 'สูง') {
+                    recommendations.push({
+                        category: 'การรักษาเร่งด่วน',
+                        items: [
+                            'พิจารณายาลดคอเลสเตอรอล (Statins) ทันที',
+                            'ควบคุมความดันโลหิตให้ต่ำกว่า 130/80 mmHg',
+                            'พบแพทย์ติดตามทุก 3 เดือน',
+                            'ตรวจเลือดติดตามทุก 6 เดือน'
+                        ]
+                    });
+                } else if (riskLevel === 'ปานกลาง') {
+                    recommendations.push({
+                        category: 'การรักษาระดับกลาง',
+                        items: [
+                            'พิจารณายาลดคอเลสเตอรอลตามแพทย์',
+                            'ควบคุมความดันโลหิตให้ต่ำกว่า 140/90 mmHg',
+                            'พบแพทย์ติดตามทุก 6 เดือน',
+                            'ตรวจเลือดติดตามปีละ 1-2 ครั้ง'
+                        ]
+                    });
+                } else {
+                    recommendations.push({
+                        category: 'การดูแลเบื้องต้น',
+                        items: [
+                            'ควบคุมอาหารและออกกำลังกายสม่ำเสมอ',
+                            'ติดตามความดันโลหิตเป็นประจำ',
+                            'พบแพทย์ติดตามปีละ 1 ครั้ง',
+                            'ตรวจเลือดติดตามทุก 2 ปี'
+                        ]
+                    });
+                }
+                
+                // Lifestyle recommendations for all risk levels
+                recommendations.push({
+                    category: 'การปรับเปลี่ยนวิถีชีวิต',
+                    items: [
+                        formData.smoking !== 'never' ? 'เลิกสูบบุหรี่โดยเร็วที่สุด' : 'ไม่สูบบุหรี่ต่อไป',
+                        'ออกกำลังกายอย่างน้อย 150 นาทีต่อสัปดาห์',
+                        'รับประทานผักผลไม้ 5 ส่วนต่อวัน',
+                        'ลดเกลือและน้ำตาลในอาหาร',
+                        'ดื่มน้ำเปล่าอย่างน้อย 8 แก้วต่อวัน',
+                        'นอนหลับพักผ่อนให้เพียงพอ 7-8 ชั่วโมงต่อวัน'
+                    ]
+                });
+                
+                return {
+                    score,
+                    riskLevel,
+                    riskPercentage,
+                    riskDescription,
+                    bmi,
+                    recommendations,
+                    timestamp: new Date()
+                };
+            };
+
+            const nextStep = () => {
+                if (currentStep < steps.length - 1) {
+                    if (validateCurrentStep()) {
+                        setCurrentStep(prev => prev + 1);
+                    }
+                } else {
+                    // Final step - calculate results
+                    if (validateCurrentStep()) {
+                        setLoading(true);
+                        setTimeout(() => {
+                            const cvdResults = calculateCVDRisk();
+                            setResults(cvdResults);
+                            
+                            // Send Telegram notification
+                            sendTelegramNotification(cvdResults, formData);
+                            
+                            setLoading(false);
+                        }, 1500);
+                    }
+                }
+            };
+
+            const prevStep = () => {
+                if (currentStep > 0) {
+                    setCurrentStep(prev => prev - 1);
+                }
+            };
+
+            const resetSystem = () => {
+                try {
+                    if (loading) return;
+                    setLoading(true);
+                    
+                    setTimeout(() => {
+                        try {
+                            setValidationErrors({});
+                            setTimeout(() => {
+                                setResults(null);
+                                setTimeout(() => {
+                                    setCurrentStep(0);
+                                    setTimeout(() => {
+                                        setFormData({
+                                            age: '', gender: '', smoking: 'never', 
+                                            systolicBP: '', diastolicBP: '', totalCholesterol: '', 
+                                            diabetes: false, 
+                                            waist: '', weight: '', height: '',
+                                            familyHistory: false, hypertensionMeds: false,
+                                            lipidMeds: false, previousCVD: false
+                                        });
+                                        setTimeout(() => {
+                                            setLoading(false);
+                                        }, 100);
+                                    }, 50);
+                                }, 50);
+                            }, 50);
+                        } catch (error) {
+                            console.error('Error during reset process:', error);
+                            setLoading(false);
+                        }
+                    }, 100);
+                } catch (error) {
+                    console.error('Error during system reset:', error);
+                    setLoading(false);
+                    setTimeout(() => {
+                        if (confirm('System reset failed. Reload page?')) {
+                            window.location.reload();
+                        }
+                    }, 1000);
+                }
+            };
+
+            const exportPDF = () => {
+                if (!window.jspdf || !window.jspdf.jsPDF) {
+                    console.log('jsPDF not available');
+                    return;
+                }
+
+                try {
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF();
+
+                    // Header
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(20);
+                    doc.text('CVD Risk Assessment Report', 20, 25);
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(11);
+                    doc.text('Cardiovascular Disease Risk Screening System', 20, 33);
+                
+                    // Date and patient info
+                    doc.setFontSize(10);
+                    doc.text(`Assessment Date: ${results.timestamp.toLocaleDateString('en-US')}`, 20, 45);
+                    doc.text(`Assessment Time: ${results.timestamp.toLocaleTimeString('en-US')}`, 120, 45);
+                    
+                    // Patient details box
+                    doc.setDrawColor(200, 200, 200);
+                    doc.rect(20, 55, 170, 35);
+                    doc.setFontSize(9);
+                    doc.text(`Age: ${formData.age} years`, 25, 63);
+                    doc.text(`Gender: ${formData.gender === 'male' ? 'Male' : 'Female'}`, 25, 70);
+                    doc.text(`BMI: ${results.bmi || 'N/A'}`, 25, 77);
+                    doc.text(`Smoking: ${formData.smoking === 'never' ? 'Never' : formData.smoking === 'former' ? 'Former' : 'Current'}`, 25, 84);
+                    
+                    doc.text(`Blood Pressure: ${formData.systolicBP}/${formData.diastolicBP} mmHg`, 100, 63);
+                    doc.text(`Total Cholesterol: ${formData.totalCholesterol} mg/dL`, 100, 70);
+                    doc.text(`Diabetes: ${formData.diabetes ? 'Yes' : 'No'}`, 100, 77);
+                    doc.text(`Family History: ${formData.familyHistory ? 'Yes' : 'No'}`, 100, 84);
+
+                    let yPosition = 105;
+
+                    // Risk Assessment Chart
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(14);
+                    doc.text('Risk Assessment Result', 20, yPosition);
+                    yPosition += 10;
+                    
+                    // Risk visualization box
+                    const riskColor = results.riskLevel === 'สูง' ? [220, 38, 38] : 
+                                     results.riskLevel === 'ปานกลาง' ? [234, 88, 12] : [22, 163, 74];
+                    
+                    doc.setDrawColor(...riskColor);
+                    doc.setLineWidth(2);
+                    doc.rect(20, yPosition, 170, 60);
+                    
+                    // Spider chart SVG placeholder
+                    doc.setDrawColor(230, 230, 230);
+                    doc.setLineWidth(0.5);
+                    
+                    // Draw hexagon for spider chart
+                    const centerX = 105;
+                    const centerY = yPosition + 30;
+                    const radius = 25;
+                    
+                    for (let i = 0; i < 6; i++) {
+                        const angle1 = (i * 60 - 90) * Math.PI / 180;
+                        const angle2 = ((i + 1) * 60 - 90) * Math.PI / 180;
+                        const x1 = centerX + radius * Math.cos(angle1);
+                        const y1 = centerY + radius * Math.sin(angle1);
+                        const x2 = centerX + radius * Math.cos(angle2);
+                        const y2 = centerY + radius * Math.sin(angle2);
+                        doc.line(x1, y1, x2, y2);
+                        doc.line(centerX, centerY, x1, y1);
+                    }
+                    
+                    // Risk display
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(28);
+                    doc.setTextColor(...riskColor);
+                    const riskLevelEn = results.riskLevel === 'สูง' ? 'HIGH' : 
+                                       results.riskLevel === 'ปานกลาง' ? 'MODERATE' : 'LOW';
+                    doc.text(riskLevelEn, 25, yPosition + 30);
+                    doc.setFontSize(20);
+                    doc.text(`Score: ${results.score}`, 25, yPosition + 45);
+                    doc.setTextColor(0, 0, 0);
+
+                    yPosition += 70;
+
+                    // Risk Summary
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(14);
+                    doc.text('Risk Assessment Summary', 20, yPosition);
+                    yPosition += 10;
+
+                    doc.setFont("helvetica", "normal");
+                    doc.setFontSize(11);
+                    const riskDescEn = results.riskLevel === 'สูง' ? 'High risk: >20% chance of CVD in 10 years' : 
+                                      results.riskLevel === 'ปานกลาง' ? 'Moderate risk: 10-20% chance of CVD in 10 years' : 
+                                      'Low risk: <10% chance of CVD in 10 years';
+                    doc.text(riskDescEn, 25, yPosition);
+                    yPosition += 8;
+                    doc.text(`10-year CVD Risk: ${results.riskPercentage}`, 25, yPosition);
+                    yPosition += 15;
+
+                    // Recommendations
+                    doc.setFont("helvetica", "bold");
+                    doc.setFontSize(14);
+                    doc.text('Recommendations', 20, yPosition);
+                    yPosition += 10;
+
+                    // Convert Thai recommendations to English
+                    const recommendationMap = {
+                        'การรักษาเร่งด่วน': 'Urgent Medical Treatment',
+                        'การรักษาระดับกลาง': 'Moderate Medical Care',
+                        'การดูแลเบื้องต้น': 'Basic Prevention',
+                        'การปรับเปลี่ยนวิถีชีวิต': 'Lifestyle Modifications'
+                    };
+
+                    results.recommendations.forEach((rec, index) => {
+                        doc.setFont("helvetica", "bold");
+                        doc.setFontSize(12);
+                        const categoryEn = recommendationMap[rec.category] || rec.category;
+                        doc.text(`${index + 1}. ${categoryEn}`, 25, yPosition);
+                        yPosition += 8;
+                        
+                        doc.setFont("helvetica", "normal");
+                        doc.setFontSize(10);
+                        rec.items.forEach(item => {
+                            try {
+                                // Convert common Thai recommendations to English
+                                let itemEn = item;
+                                if (item.includes('Statins')) itemEn = 'Consider statin medication immediately';
+                                else if (item.includes('130/80')) itemEn = 'Control blood pressure below 130/80 mmHg';
+                                else if (item.includes('140/90')) itemEn = 'Control blood pressure below 140/90 mmHg';
+                                else if (item.includes('3 เดือน')) itemEn = 'Follow up with doctor every 3 months';
+                                else if (item.includes('6 เดือน')) itemEn = 'Follow up with doctor every 6 months';
+                                else if (item.includes('ปีละ 1 ครั้ง')) itemEn = 'Annual health checkup';
+                                else if (item.includes('150 นาที')) itemEn = 'Exercise at least 150 minutes per week';
+                                else if (item.includes('เลิกสูบบุหรี่')) itemEn = 'Quit smoking immediately';
+                                else if (item.includes('ไม่สูบบุหรี่')) itemEn = 'Continue to avoid smoking';
+                                else if (item.includes('ผักผลไม้')) itemEn = 'Eat 5 servings of fruits and vegetables daily';
+                                else if (item.includes('เกลือและน้ำตาล')) itemEn = 'Reduce salt and sugar intake';
+                                else if (item.includes('น้ำเปล่า')) itemEn = 'Drink at least 8 glasses of water daily';
+                                else if (item.includes('7-8 ชั่วโมง')) itemEn = 'Get 7-8 hours of sleep daily';
+                                else if (item.includes('ควบคุมอาหาร')) itemEn = 'Control diet and exercise regularly';
+                                else if (item.includes('ติดตามความดัน')) itemEn = 'Monitor blood pressure regularly';
+                                else if (item.includes('ตรวจเลือด')) itemEn = 'Blood test follow-up';
+                                
+                                const lines = doc.splitTextToSize(`• ${itemEn}`, 160);
+                                doc.text(lines, 35, yPosition);
+                                yPosition += lines.length * 5;
+                            } catch (error) {
+                                console.error('Error adding recommendation:', error);
+                            }
+                            
+                            if (yPosition > 250) {
+                                doc.addPage();
+                                yPosition = 20;
+                            }
+                        });
+                        yPosition += 5;
+                    });
+
+                    // Footer
+                    doc.setFont("helvetica", "italic");
+                    doc.setFontSize(8);
+                    doc.setTextColor(100, 100, 100);
+                    doc.text('This assessment is for educational purposes only. Please consult a healthcare professional.', 20, 270);
+                    doc.text('Reference: Thai CPG for CVD Risk Assessment | National Heart Association Thailand', 20, 276);
+
+                    doc.save(`CVD_Risk_Assessment_${new Date().toISOString().split('T')[0]}.pdf`);
+                } catch (error) {
+                    console.error('PDF generation error:', error);
+                    alert('Unable to generate PDF. Please try again.');
+                }
+            };
+
+            // Component renders
+            const renderBasicInfo = () => {
+                return h('div', { className: 'space-y-6' }, [
+                    h('div', { className: 'grid grid-cols-1 md:grid-cols-2 gap-6' }, [
+                        h('div', {}, [
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'อายุ (ปี) *'),
+                            h('input', {
+                                type: 'number',
+                                className: `form-field w-full p-3 border rounded-lg ${validationErrors.age ? 'border-red-500 bg-red-50' : 'border-gray-300'}`,
+                                placeholder: 'เช่น 45',
+                                value: formData.age,
+                                onChange: (e) => handleInputChange('age', e.target.value)
+                            }),
+                            validationErrors.age && h('p', { className: 'text-red-500 text-sm mt-1' }, validationErrors.age)
+                        ]),
+                        h('div', {}, [
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'เพศ *'),
+                            h('select', {
+                                className: `form-field w-full p-3 border rounded-lg ${validationErrors.gender ? 'border-red-500 bg-red-50' : 'border-gray-300'}`,
+                                value: formData.gender,
+                                onChange: (e) => handleInputChange('gender', e.target.value)
+                            }, [
+                                h('option', { value: '' }, 'เลือกเพศ'),
+                                h('option', { value: 'male' }, 'ชาย'),
+                                h('option', { value: 'female' }, 'หญิง')
+                            ]),
+                            validationErrors.gender && h('p', { className: 'text-red-500 text-sm mt-1' }, validationErrors.gender)
+                        ])
+                    ]),
+                    h('div', {}, [
+                        h('label', { className: 'block text-sm font-medium text-gray-700 mb-3' }, 'สถานะการสูบบุหรี่ *'),
+                        h('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-3' }, [
+                            ['never', 'ไม่เคยสูบ', 'fas fa-ban', '#10b981'],
+                            ['former', 'เลิกแล้ว', 'fas fa-check-circle', '#f59e0b'],
+                            ['current', 'สูบปัจจุบัน', 'fas fa-smoking', '#ef4444']
+                        ].map(([value, label, icon, color]) =>
+                            h('div', {
+                                key: value,
+                                className: `p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                                    formData.smoking === value 
+                                        ? 'border-blue-500 bg-blue-50' 
+                                        : 'border-gray-200 hover:border-gray-300'
+                                }`,
+                                onClick: () => handleInputChange('smoking', value)
+                            }, [
+                                h('div', { className: 'flex items-center space-x-3' }, [
+                                    h('i', { className: `${icon} text-2xl`, style: { color } }),
+                                    h('div', {}, [
+                                        h('div', { className: 'font-medium text-gray-900' }, label),
+                                        formData.smoking === value && h('i', { className: 'fas fa-check text-blue-500 mt-1' })
+                                    ])
+                                ])
+                            ])
+                        ))
+                    ])
+                ]);
+            };
+
+            const renderClinicalMeasurements = () => {
+                return h('div', { className: 'space-y-6' }, [
+                    h('div', { className: 'bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6' }, [
+                        h('div', { className: 'flex items-center space-x-2 mb-2' }, [
+                            h('i', { className: 'fas fa-info-circle text-blue-600' }),
+                            h('h3', { className: 'font-medium text-blue-900' }, 'ข้อมูลการวัดทางคลินิก')
+                        ]),
+                        h('p', { className: 'text-sm text-blue-800' }, 'กรุณากรอกผลการตรวจวัดล่าสุด หากไม่มีข้อมูล ควรปรึกษาแพทย์เพื่อตรวจวัดก่อนการประเมิน')
+                    ]),
+                    h('div', { className: 'grid grid-cols-1 md:grid-cols-2 gap-6' }, [
+                        h('div', {}, [
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'ความดันโลหิตตัวบน (mmHg) *'),
+                            h('input', {
+                                type: 'number',
+                                className: `form-field w-full p-3 border rounded-lg ${validationErrors.systolicBP ? 'border-red-500 bg-red-50' : 'border-gray-300'}`,
+                                placeholder: 'เช่น 120',
+                                value: formData.systolicBP,
+                                onChange: (e) => handleInputChange('systolicBP', e.target.value)
+                            }),
+                            validationErrors.systolicBP && h('p', { className: 'text-red-500 text-sm mt-1' }, validationErrors.systolicBP)
+                        ]),
+                        h('div', {}, [
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'ความดันโลหิตตัวล่าง (mmHg) *'),
+                            h('input', {
+                                type: 'number',
+                                className: `form-field w-full p-3 border rounded-lg ${validationErrors.diastolicBP ? 'border-red-500 bg-red-50' : 'border-gray-300'}`,
+                                placeholder: 'เช่น 80',
+                                value: formData.diastolicBP,
+                                onChange: (e) => handleInputChange('diastolicBP', e.target.value)
+                            }),
+                            validationErrors.diastolicBP && h('p', { className: 'text-red-500 text-sm mt-1' }, validationErrors.diastolicBP)
+                        ])
+                    ]),
+                    h('div', { className: 'grid grid-cols-1 md:grid-cols-1 gap-6' }, [
+                        h('div', {}, [
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'คอเลสเตอรอลรวม (mg/dL) *'),
+                            h('input', {
+                                type: 'number',
+                                className: `form-field w-full p-3 border rounded-lg ${validationErrors.totalCholesterol ? 'border-red-500 bg-red-50' : 'border-gray-300'}`,
+                                placeholder: 'เช่น 200',
+                                value: formData.totalCholesterol,
+                                onChange: (e) => handleInputChange('totalCholesterol', e.target.value)
+                            }),
+                            validationErrors.totalCholesterol && h('p', { className: 'text-red-500 text-sm mt-1' }, validationErrors.totalCholesterol)
+                        ])
+                    ])
+                ]);
+            };
+
+            const renderMedicalHistory = () => {
+                return h('div', { className: 'space-y-6' }, [
+                    h('div', { className: 'space-y-4' }, [
+                        [
+                            { key: 'diabetes', label: 'เบาหวาน', icon: 'fas fa-tint', color: '#ef4444' },
+                            { key: 'familyHistory', label: 'ประวัติครอบครัวเป็นโรคหัวใจ', icon: 'fas fa-users', color: '#8b5cf6' },
+                            { key: 'previousCVD', label: 'เคยเป็นโรคหัวใจและหลอดเลือดมาก่อน', icon: 'fas fa-heartbeat', color: '#dc2626' },
+                            { key: 'hypertensionMeds', label: 'กินยาความดันโลหิต', icon: 'fas fa-pills', color: '#3b82f6' },
+                            { key: 'lipidMeds', label: 'กินยาลดคอเลสเตอรอล', icon: 'fas fa-capsules', color: '#10b981' }
+                        ].map((condition) =>
+                            h('div', {
+                                key: condition.key,
+                                className: `p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                                    formData[condition.key] 
+                                        ? 'border-blue-500 bg-blue-50' 
+                                        : 'border-gray-200 hover:border-gray-300'
+                                }`
+                            }, [
+                                h('div', { className: 'flex items-center justify-between' }, [
+                                    h('div', { className: 'flex items-center space-x-3' }, [
+                                        h('i', { className: `${condition.icon} text-2xl`, style: { color: condition.color } }),
+                                        h('span', { className: 'font-medium text-gray-900' }, condition.label)
+                                    ]),
+                                    h('div', { className: 'flex items-center space-x-3' }, [
+                                        h('button', {
+                                            type: 'button',
+                                            className: `px-4 py-2 rounded-lg font-medium transition-colors ${
+                                                formData[condition.key] === false 
+                                                    ? 'bg-gray-200 text-gray-800' 
+                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            }`,
+                                            onClick: () => handleInputChange(condition.key, false)
+                                        }, 'ไม่มี'),
+                                        h('button', {
+                                            type: 'button',
+                                            className: `px-4 py-2 rounded-lg font-medium transition-colors ${
+                                                formData[condition.key] === true 
+                                                    ? 'bg-blue-500 text-white' 
+                                                    : 'bg-gray-100 text-gray-600 hover:bg-blue-100'
+                                            }`,
+                                            onClick: () => handleInputChange(condition.key, true)
+                                        }, 'มี')
+                                    ])
+                                ])
+                            ])
+                        )
+                    ])
+                ]);
+            };
+
+            const renderAnthropometric = () => {
+                return h('div', { className: 'space-y-6' }, [
+                    h('div', { className: 'bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6' }, [
+                        h('div', { className: 'flex items-center space-x-2 mb-2' }, [
+                            h('i', { className: 'fas fa-ruler text-yellow-600' }),
+                            h('h3', { className: 'font-medium text-yellow-900' }, 'การวัดร่างกาย')
+                        ]),
+                        h('p', { className: 'text-sm text-yellow-800' }, 'ข้อมูลเหล่านี้จะช่วยคำนวณ BMI และประเมินความเสี่ยงเพิ่มเติม')
+                    ]),
+                    h('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-6' }, [
+                        h('div', {}, [
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'รอบเอว (ซม.) *'),
+                            h('input', {
+                                type: 'number',
+                                className: `form-field w-full p-3 border rounded-lg ${validationErrors.waist ? 'border-red-500 bg-red-50' : 'border-gray-300'}`,
+                                placeholder: 'เช่น 85',
+                                value: formData.waist,
+                                onChange: (e) => handleInputChange('waist', e.target.value)
+                            }),
+                            validationErrors.waist && h('p', { className: 'text-red-500 text-sm mt-1' }, validationErrors.waist)
+                        ]),
+                        h('div', {}, [
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'น้ำหนัก (กก.) *'),
+                            h('input', {
+                                type: 'number',
+                                className: `form-field w-full p-3 border rounded-lg ${validationErrors.weight ? 'border-red-500 bg-red-50' : 'border-gray-300'}`,
+                                placeholder: 'เช่น 65',
+                                value: formData.weight,
+                                onChange: (e) => handleInputChange('weight', e.target.value)
+                            }),
+                            validationErrors.weight && h('p', { className: 'text-red-500 text-sm mt-1' }, validationErrors.weight)
+                        ]),
+                        h('div', {}, [
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'ส่วนสูง (ซม.) *'),
+                            h('input', {
+                                type: 'number',
+                                className: `form-field w-full p-3 border rounded-lg ${validationErrors.height ? 'border-red-500 bg-red-50' : 'border-gray-300'}`,
+                                placeholder: 'เช่น 165',
+                                value: formData.height,
+                                onChange: (e) => handleInputChange('height', e.target.value)
+                            }),
+                            validationErrors.height && h('p', { className: 'text-red-500 text-sm mt-1' }, validationErrors.height)
+                        ])
+                    ])
+                ]);
+            };
+
+            const renderStepContent = () => {
+                switch (currentStep) {
+                    case 0: return renderBasicInfo();
+                    case 1: return renderClinicalMeasurements();
+                    case 2: return renderMedicalHistory();
+                    case 3: return renderAnthropometric();
+                    default: return renderBasicInfo();
+                }
+            };
+
+            const renderResults = () => {
+                return h('div', { className: 'min-h-screen bg-gray-50 py-8' }, [
+                    h('div', { className: 'max-w-6xl mx-auto px-4' }, [
+                        
+                        // Professional Header
+                        h('div', { className: 'bg-white border border-gray-200 rounded-lg shadow-sm mb-6' }, [
+                            h('div', { className: 'border-b border-gray-200 px-6 py-4' }, [
+                                h('div', { className: 'flex items-center justify-between' }, [
+                                    h('div', { className: 'flex items-center space-x-3' }, [
+                                        h('div', { className: 'w-12 h-12 bg-gradient-to-br from-red-500 to-pink-500 rounded-lg flex items-center justify-center p-2 shadow-lg' }, [
+                                            h('i', { className: 'fas fa-heartbeat text-white text-lg' })
+                                        ]),
+                                        h('div', {}, [
+                                            h('h1', { className: 'text-xl font-semibold text-gray-900' }, 'รายงานการประเมินความเสี่ยง CVD'),
+                                            h('p', { className: 'text-sm text-gray-500' }, 'CVD Risk Assessment Report')
+                                        ])
+                                    ]),
+                                    h('div', { className: 'text-right text-sm text-gray-500' }, [
+                                        h('div', {}, results.timestamp.toLocaleDateString('th-TH')),
+                                        h('div', {}, results.timestamp.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }))
+                                    ])
+                                ])
+                            ]),
+                            
+                            // Patient Info Table
+                            h('div', { className: 'px-6 py-4' }, [
+                                h('div', { className: 'grid grid-cols-2 md:grid-cols-4 gap-6 text-sm' }, [
+                                    h('div', { className: 'space-y-1' }, [
+                                        h('div', { className: 'text-gray-500' }, 'เพศ'),
+                                        h('div', { className: 'font-medium text-gray-900' }, formData.gender === 'female' ? 'หญิง' : 'ชาย')
+                                    ]),
+                                    h('div', { className: 'space-y-1' }, [
+                                        h('div', { className: 'text-gray-500' }, 'อายุ'),
+                                        h('div', { className: 'font-medium text-gray-900' }, formData.age + ' ปี')
+                                    ]),
+                                    h('div', { className: 'space-y-1' }, [
+                                        h('div', { className: 'text-gray-500' }, 'BMI'),
+                                        h('div', { className: 'font-medium text-gray-900' }, results.bmi ? results.bmi : 'N/A')
+                                    ]),
+                                    h('div', { className: 'space-y-1' }, [
+                                        h('div', { className: 'text-gray-500' }, 'การสูบบุหรี่'),
+                                        h('div', { className: 'font-medium text-gray-900' }, 
+                                            formData.smoking === 'never' ? 'ไม่สูบ' : 
+                                            formData.smoking === 'former' ? 'เลิกแล้ว' : 'สูบปัจจุบัน')
+                                    ])
+                                ])
+                            ])
+                        ]),
+
+                        // Risk Score Display
+                        h('div', { className: 'bg-white border border-gray-200 rounded-lg shadow-sm mb-6' }, [
+                            h('div', { className: 'px-6 py-4 border-b border-gray-200' }, [
+                                h('h2', { className: 'text-lg font-semibold text-gray-900' }, 'ผลการประเมินความเสี่ยง CVD')
+                            ]),
+                            h('div', { className: 'p-8 text-center' }, [
+                                h('div', { className: 'inline-flex items-center justify-center w-32 h-32 rounded-full mb-6', 
+                                    style: { 
+                                        backgroundColor: results.riskLevel === 'สูง' ? '#fee2e2' : 
+                                                           results.riskLevel === 'ปานกลาง' ? '#fef3c7' : '#dcfce7',
+                                        border: `4px solid ${results.riskLevel === 'สูง' ? '#dc2626' : 
+                                                                results.riskLevel === 'ปานกลาง' ? '#d97706' : '#059669'}`
+                                    }
+                                }, [
+                                    h('div', { className: 'text-center' }, [
+                                        h('div', { 
+                                            className: `text-3xl font-bold`,
+                                            style: { 
+                                                color: results.riskLevel === 'สูง' ? '#dc2626' : 
+                                                       results.riskLevel === 'ปานกลาง' ? '#d97706' : '#059669'
+                                            }
+                                        }, results.score),
+                                        h('div', { className: 'text-xs text-gray-600' }, 'คะแนน')
+                                    ])
+                                ]),
+                                h('h3', { 
+                                    className: `text-2xl font-bold mb-2`,
+                                    style: { 
+                                        color: results.riskLevel === 'สูง' ? '#dc2626' : 
+                                               results.riskLevel === 'ปานกลาง' ? '#d97706' : '#059669'
+                                    }
+                                }, `ความเสี่ยง${results.riskLevel}`),
+                                h('p', { className: 'text-lg text-gray-600 mb-4' }, results.riskPercentage),
+                                h('p', { className: 'text-sm text-gray-700 max-w-2xl mx-auto' }, results.riskDescription)
+                            ])
+                        ]),
+
+                        // Recommendations
+                        h('div', { className: 'bg-white border border-gray-200 rounded-lg shadow-sm mb-6' }, [
+                            h('div', { className: 'px-6 py-4 border-b border-gray-200 bg-blue-600' }, [
+                                h('h2', { className: 'text-lg font-semibold text-white' }, 'คำแนะนำการดูแลรักษา')
+                            ]),
+                            h('div', { className: 'p-6' }, [
+                                h('div', { className: 'space-y-6' }, results.recommendations.map((rec, index) => 
+                                    h('div', { key: index, className: 'border-l-4 border-blue-500 pl-4' }, [
+                                        h('h3', { className: 'font-semibold text-lg text-gray-900 mb-3' }, rec.category),
+                                        h('ul', { className: 'space-y-2' }, 
+                                            rec.items.map((item, i) => 
+                                                h('li', { key: i, className: 'flex items-start space-x-2 text-sm text-gray-700' }, [
+                                                    h('i', { className: 'fas fa-check-circle text-green-500 mt-0.5 flex-shrink-0' }),
+                                                    h('span', {}, item)
+                                                ])
+                                            )
+                                        )
+                                    ])
+                                ))
+                            ])
+                        ]),
+
+                        // Action Buttons
+                        h('div', { className: 'bg-white border border-gray-200 rounded-lg shadow-sm p-6' }, [
+                            h('div', { className: 'flex flex-col sm:flex-row gap-3 justify-center mb-4' }, [
+                                h('button', {
+                                    onClick: exportPDF,
+                                    className: 'bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium text-sm flex items-center justify-center space-x-2 transition-colors shadow-md hover:shadow-lg'
+                                }, [
+                                    h('i', { className: 'fas fa-download text-sm' }),
+                                    h('span', {}, 'ดาวน์โหลดรายงาน PDF')
+                                ]),
+                                h('button', {
+                                    onClick: resetSystem,
+                                    disabled: loading,
+                                    className: `${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'} text-white px-6 py-2 rounded-lg font-medium text-sm flex items-center justify-center space-x-2 transition-colors shadow-md hover:shadow-lg`
+                                }, [
+                                    h('i', { className: 'fas fa-redo text-sm' }),
+                                    h('span', {}, 'ประเมินใหม่')
+                                ])
+                            ]),
+                            h('div', { className: 'border-t border-gray-200 pt-4' }, [
+                                h('div', { className: 'mb-3 flex items-center justify-center space-x-2 text-xs' }, [
+                                    h('i', { className: `fas fa-${TELEGRAM_CONFIG.ENABLED ? 'check-circle text-green-600' : 'times-circle text-red-600'}` }),
+                                    h('span', { className: TELEGRAM_CONFIG.ENABLED ? 'text-green-600' : 'text-red-600' }, 
+                                        TELEGRAM_CONFIG.ENABLED ? 'Notification sent successfully' : 'Notification disabled'
+                                    )
+                                ]),
+                                h('p', { className: 'text-xs text-gray-600 text-center max-w-3xl mx-auto' }, [
+                                    h('i', { className: 'fas fa-info-circle mr-1' }),
+                                    'ผลการประเมินนี้เป็นเครื่องมือช่วยให้ความรู้เบื้องต้นเท่านั้น ไม่สามารถใช้วินิจฉัยโรคได้ แนะนำให้ปรึกษาแพทย์เพื่อการตรวจสอบและรักษาที่ถูกต้องเหมาะสม'
+                                ])
+                            ])
+                        ]),
+
+                        // Professional Footer
+                        h('div', { className: 'bg-gray-900 rounded-lg p-4 text-center text-white mt-6' }, [
+                            h('div', { className: 'text-sm' }, [
+                                h('p', { className: 'font-semibold' }, 'อ้างอิงข้อมูลจาก'),
+                                h('p', {}, 'Thai Clinical Practice Guidelines for CVD Risk Assessment'),
+                                h('p', {}, 'National Heart Association Thailand')
+                            ])
+                        ])
+                    ])
+                ]);
+            };
+
+            if (results) {
+                return renderResults();
+            }
+
+            return h('div', { className: 'min-h-screen flex flex-col' }, [
+                h('div', { className: 'flex-1 flex items-center justify-center' }, [
+                    h('div', { className: 'w-full max-w-4xl mx-auto px-2 sm:px-4 py-4 sm:py-8' }, [
+                    // Beautiful Professional Header (Responsive)
+                    h('div', { className: 'mb-6' }, [
+                        h('div', { className: 'bg-white border border-gray-200 rounded-lg shadow-sm p-3 sm:p-6' }, [
+                            h('div', { className: 'flex items-center text-left' }, [
+                                // Logo on the left (always)
+                                h('div', { className: 'mr-4 sm:mr-6 flex-shrink-0' }, [
+                                    h('div', { className: 'w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-br from-red-500 to-pink-500 rounded-2xl flex items-center justify-center p-2 shadow-lg' }, [
+                                        h('i', { className: 'fas fa-heartbeat text-white text-xl sm:text-2xl' })
+                                    ])
+                                ]),
+                                
+                                // Text content on the right (always)
+                                h('div', { className: 'flex-1' }, [
+                                    h('div', { className: 'border-l-4 border-red-600 pl-3 sm:pl-6' }, [
+                                        h('h1', { className: 'text-xl sm:text-2xl font-bold text-red-600 leading-tight mb-0' }, 'ระบบประเมินความเสี่ยง CVD เบื้องต้น'),
+                                        h('p', { className: 'text-sm sm:text-base text-gray-600 -mt-1' }, 'CVD Risk Assessment System')
+                                    ])
+                                ])
+                            ])
+                        ])
+                    ]),
+
+                    // Progress Indicator
+                    h('div', { className: 'mb-8' }, [
+                        h('div', { className: 'flex items-center justify-between mb-6' }, [
+                            h('div', { className: 'flex items-center space-x-4' }, [
+                                h('div', { 
+                                    className: 'w-12 h-12 rounded-full flex items-center justify-center text-white',
+                                    style: { background: steps[currentStep].color }
+                                }, [
+                                    h('i', { className: steps[currentStep].icon })
+                                ]),
+                                h('div', {}, [
+                                    h('h2', { className: 'text-2xl font-bold text-gray-800 header-font' }, steps[currentStep].title),
+                                    h('p', { className: 'text-gray-600' }, steps[currentStep].subtitle)
+                                ])
+                            ]),
+                            h('div', { className: 'text-right' }, [
+                                h('div', { className: 'text-sm text-gray-500' }, `ขั้นตอนที่ ${currentStep + 1} จาก ${steps.length}`),
+                                h('div', { className: 'text-2xl font-bold text-gray-800' }, `${Math.round(((currentStep) / steps.length) * 100)}%`)
+                            ])
+                        ]),
+                        
+                        // Progress Bar
+                        h('div', { className: 'progress-container rounded-full h-3 mb-4' }, [
+                            h('div', { 
+                                className: 'step-indicator h-3 rounded-full transition-all duration-500 ease-in-out',
+                                style: { width: `${((currentStep) / steps.length) * 100}%` }
+                            })
+                        ]),
+                        
+                        // Step indicators
+                        h('div', { className: 'flex justify-between' }, 
+                            steps.map((step, index) => 
+                                h('div', {
+                                    key: index,
+                                    className: `flex flex-col items-center ${index <= currentStep ? 'text-blue-600' : 'text-gray-400'}`
+                                }, [
+                                    h('div', { 
+                                        className: `w-8 h-8 rounded-full flex items-center justify-center ${
+                                            index <= currentStep ? 'bg-blue-600 text-white' : 'bg-gray-200'
+                                        }`
+                                    }, [
+                                        index < currentStep ? 
+                                            h('i', { className: 'fas fa-check text-sm' }) :
+                                            h('span', { className: 'text-sm font-bold' }, index + 1)
+                                    ]),
+                                    h('div', { className: 'text-xs mt-1 text-center max-w-16' }, step.title.split(' ')[0])
+                                ])
+                            )
+                        )
+                    ]),
+
+                    // Form Content
+                    h('div', { className: 'bg-white rounded-xl shadow-lg p-6 sm:p-8 mb-8' }, [
+                        renderStepContent()
+                    ]),
+
+                    // Navigation Buttons
+                    h('div', { className: 'flex justify-between items-center' }, [
+                        h('button', {
+                            onClick: prevStep,
+                            disabled: currentStep === 0,
+                            className: `btn ${currentStep === 0 ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gray-600 hover:bg-gray-700 text-white'}`
+                        }, [
+                            h('i', { className: 'fas fa-chevron-left' }),
+                            'ย้อนกลับ'
+                        ]),
+                        
+                        h('button', {
+                            onClick: nextStep,
+                            disabled: loading,
+                            className: 'btn btn-primary'
+                        }, [
+                            loading ? 'กำลังประมวลผล...' : currentStep === steps.length - 1 ? 'คำนวณผล' : 'ถัดไป',
+                            h('i', { className: currentStep === steps.length - 1 ? 'fas fa-calculator' : 'fas fa-chevron-right' })
+                        ])
+                    ])
+                    ])
+                ])
+            ]);
+        };
+
+        // Error boundary wrapper
+        const ErrorBoundary = () => {
+            try {
+                return h(CVDRiskAssessmentSystem);
+            } catch (error) {
+                console.error('React rendering error:', error);
+                return h('div', { className: 'min-h-screen flex items-center justify-center' }, [
+                    h('div', { className: 'text-center' }, [
+                        h('h1', { className: 'text-2xl font-bold text-red-600 mb-4' }, 'เกิดข้อผิดพลาด'),
+                        h('p', { className: 'text-gray-600 mb-4' }, 'กรุณารีเฟรชหน้าเว็บและลองใหม่อีกครั้ง'),
+                        h('button', { 
+                            className: 'btn btn-primary',
+                            onClick: () => window.location.reload()
+                        }, 'รีเฟรชหน้า')
+                    ])
+                ]);
+            }
+        };
+
+        // Render the app
+        ReactDOM.render(h(ErrorBoundary), document.getElementById('app'));
+    </script>
+</body>
+</html>

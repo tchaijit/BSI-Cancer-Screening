@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบประเมินความเสี่ยงโรคไม่ติดต่อเรื้อรัง | NCD Risk Assessment System</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="custom.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .fade-in { animation: fadeIn 0.5s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .progress-bar { background: linear-gradient(90deg, #7c3aed, #06b6d4); }
+        .risk-very-low { background: linear-gradient(135deg, #10b981, #34d399); }
+        .risk-low { background: linear-gradient(135deg, #84cc16, #a3e635); }
+        .risk-moderate { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+        .risk-high { background: linear-gradient(135deg, #ef4444, #f87171); }
+        .risk-very-high { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+        .ncd-chart { filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1)); }
+        .logo-size { width: 4.25rem !important; height: 4.25rem !important; }
+        @media (max-width: 768px) { .logo-size { width: 3.5rem !important; height: 3.5rem !important; } }
+        .step-indicator { transition: all 0.3s ease; }
+        .step-active { background: linear-gradient(135deg, #7c3aed, #06b6d4); color: white; }
+        .step-completed { background: linear-gradient(135deg, #10b981, #34d399); color: white; }
+        .cbac-card { transition: all 0.2s ease; border: 2px solid transparent; }
+        .cbac-card:hover { border-color: #7c3aed; transform: translateY(-2px); box-shadow: 0 8px 25px rgba(124, 58, 237, 0.15); }
+        .cbac-selected { border-color: #7c3aed; background: linear-gradient(135deg, #f3e8ff, #ede9fe); }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-purple-50 to-blue-100 min-h-screen">
+    <div id="root"></div>
+
+    <script>
+        const { useState, useEffect, createElement: h } = React;
+
+        // Telegram Bot Configuration for NCD
+        const TELEGRAM_CONFIG = {
+            ENABLED: true,
+            BOT_TOKEN: '7981380691:AAG-Jzy0r5KwnLiy8VilQeJW0dm4DSw5p9M',
+            CHAT_ID: '7592540422'
+        };
+
+        const sendTelegramNotification = async (results, formData) => {
+            if (!TELEGRAM_CONFIG.ENABLED) {
+                console.log('Telegram notifications disabled');
+                return;
+            }
+
+            try {
+                const riskEmoji = results.riskLevel === 'เสี่ยงสูงมาก' ? '🔴' : 
+                                 results.riskLevel === 'เสี่ยงสูง' ? '🟠' : 
+                                 results.riskLevel === 'เสี่ยงปานกลาง' ? '🟡' : 
+                                 results.riskLevel === 'เสี่ยงต่ำ' ? '🟢' : '💚';
+                
+                const message = `🏥 *NCD Risk Assessment Report*
+
+${riskEmoji} *Risk Level:* ${results.riskLevel}
+📊 *CBAC Score:* ${results.cbacScore}
+📊 *FINDRISC Score:* ${results.findriscScore}
+📈 *Overall Risk:* ${results.overallRisk}%
+
+👤 *Patient Information:*
+• Age: ${formData.age} years
+• Gender: ${formData.gender === 'male' ? 'ชาย' : 'หญิง'}
+• BMI: ${results.bmi || 'N/A'}
+• Waist: ${formData.waistCircumference} cm
+
+🔍 *Risk Factors:*
+• Family History DM: ${formData.familyHistoryDM ? 'มี' : 'ไม่มี'}
+• High BP: ${formData.highBP ? 'มี' : 'ไม่มี'}
+• Physical Activity: ${formData.physicalActivity}
+• Smoking: ${formData.smoking ? 'สูบ' : 'ไม่สูบ'}
+
+⏰ *Assessment Time:* ${results.timestamp.toLocaleString('th-TH')}
+
+💡 *Key Recommendations:*
+${results.recommendations.slice(0, 3).map(item => `• ${item}`).join('\n')}
+
+📋 *System:* NCD Risk Assessment (CBAC + FINDRISC)
+🏥 *Institution:* Ministry of Public Health Thailand`;
+
+                const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_CONFIG.BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: TELEGRAM_CONFIG.CHAT_ID,
+                        text: message,
+                        parse_mode: 'Markdown',
+                        disable_web_page_preview: true
+                    })
+                });
+
+                const data = await response.json();
+                if (data.ok) {
+                    console.log('NCD Telegram notification sent successfully');
+                } else {
+                    console.error('Telegram API error:', data.description);
+                }
+            } catch (error) {
+                console.error('Telegram notification error:', error);
+            }
+        };
+
+        // NCD Risk calculation combining CBAC and FINDRISC
+        const calculateNCDRisk = (data) => {
+            // CBAC Scoring (Community Based Assessment Checklist)
+            let cbacScore = 0;
+            
+            // Age scoring
+            if (data.age >= 60) cbacScore += 20;
+            else if (data.age >= 50) cbacScore += 10;
+            else if (data.age >= 40) cbacScore += 5;
+            else if (data.age >= 30) cbacScore += 2;
+
+            // Gender scoring (males higher risk)
+            if (data.gender === 'male') cbacScore += 2;
+
+            // Family history
+            if (data.familyHistoryDM) cbacScore += 8;
+            if (data.familyHistoryHTN) cbacScore += 2;
+            if (data.familyHistoryHeart) cbacScore += 2;
+
+            // Waist circumference
+            if (data.gender === 'male') {
+                if (data.waistCircumference >= 102) cbacScore += 4;
+                else if (data.waistCircumference >= 94) cbacScore += 3;
+                else if (data.waistCircumference >= 90) cbacScore += 2;
+            } else {
+                if (data.waistCircumference >= 88) cbacScore += 4;
+                else if (data.waistCircumference >= 80) cbacScore += 3;
+            }
+
+            // Physical activity
+            if (data.physicalActivity === 'none') cbacScore += 2;
+            else if (data.physicalActivity === 'minimal') cbacScore += 1;
+
+            // Tobacco use
+            if (data.smoking) cbacScore += 2;
+            if (data.alcohol === 'heavy') cbacScore += 2;
+
+            // Dietary habits
+            if (data.vegetableIntake === 'rarely') cbacScore += 1;
+            if (data.processedFood === 'daily') cbacScore += 2;
+
+            // Existing conditions
+            if (data.highBP) cbacScore += 6;
+            if (data.preDiabetes) cbacScore += 5;
+
+            // FINDRISC Scoring (Finnish Diabetes Risk Score)
+            let findriscScore = 0;
+            
+            // Age (FINDRISC)
+            if (data.age >= 65) findriscScore += 4;
+            else if (data.age >= 55) findriscScore += 3;
+            else if (data.age >= 45) findriscScore += 2;
+            else if (data.age >= 35) findriscScore += 1;
+
+            // BMI calculation and scoring
+            let bmi = null;
+            if (data.weight && data.height) {
+                bmi = (data.weight / Math.pow(data.height / 100, 2)).toFixed(1);
+                if (parseFloat(bmi) >= 30) findriscScore += 3;
+                else if (parseFloat(bmi) >= 25) findriscScore += 1;
+            }
+
+            // Family history (FINDRISC)
+            if (data.familyHistoryDM) {
+                if (data.familyHistoryDMClose) findriscScore += 5;
+                else findriscScore += 3;
+            }
+
+            // Physical activity (FINDRISC)
+            if (data.physicalActivity === 'none') findriscScore += 2;
+
+            // Vegetable/fruit consumption
+            if (data.vegetableIntake === 'rarely') findriscScore += 1;
+
+            // Blood pressure medication
+            if (data.highBP) findriscScore += 2;
+
+            // History of high blood glucose
+            if (data.preDiabetes) findriscScore += 5;
+
+            // Calculate overall risk percentage
+            const combinedScore = (cbacScore * 0.6) + (findriscScore * 0.4);
+            let overallRisk = Math.min(95, Math.round(combinedScore * 2.5));
+
+            // Determine risk level
+            let riskLevel, color, description;
+            if (combinedScore >= 25) {
+                riskLevel = 'เสี่ยงสูงมาก';
+                color = '#dc2626';
+                description = 'ความเสี่ยงสูงมาก: ต้องพบแพทย์ทันทีเพื่อตรวจวินิจฉัยและรักษา';
+            } else if (combinedScore >= 20) {
+                riskLevel = 'เสี่ยงสูง';
+                color = '#ef4444';
+                description = 'ความเสี่ยงสูง: ต้องติดตามอย่างใกล้ชิดและปรับเปลี่ยนวิถีชีวิต';
+            } else if (combinedScore >= 12) {
+                riskLevel = 'เสี่ยงปานกลาง';
+                color = '#f59e0b';
+                description = 'ความเสี่ยงปานกลาง: ควรปรับเปลี่ยนพฤติกรรมและติดตามสุขภาพ';
+            } else if (combinedScore >= 7) {
+                riskLevel = 'เสี่ยงต่ำ';
+                color = '#84cc16';
+                description = 'ความเสี่ยงต่ำ: รักษาสุขภาพที่ดีและตรวจสุขภาพเป็นประจำ';
+            } else {
+                riskLevel = 'เสี่ยงต่ำมาก';
+                color = '#10b981';
+                description = 'ความเสี่ยงต่ำมาก: สุขภาพดี ควรรักษาวิถีชีวิตที่ดีต่อไป';
+            }
+
+            // Generate specific recommendations
+            const recommendations = generateRecommendations(riskLevel, data, bmi);
+
+            return {
+                cbacScore,
+                findriscScore,
+                combinedScore: combinedScore.toFixed(1),
+                overallRisk,
+                riskLevel,
+                color,
+                description,
+                bmi,
+                recommendations,
+                timestamp: new Date()
+            };
+        };
+
+        const generateRecommendations = (riskLevel, data, bmi) => {
+            const recommendations = [];
+            
+            if (riskLevel === 'เสี่ยงสูงมาก' || riskLevel === 'เสี่ยงสูง') {
+                recommendations.push('พบแพทย์เพื่อตรวจวัดระดับน้ำตาลในเลือดทันที');
+                recommendations.push('ตรวจวัดความดันโลหิตและไขมันในเลือด');
+                recommendations.push('เริ่มโปรแกรมการลดน้ำหนักและควบคุมอาหาร');
+                if (data.smoking) recommendations.push('เลิกสูบบุหรี่โดยทันที');
+                recommendations.push('ออกกำลังกายอย่างน้อย 150 นาที/สัปดาห์');
+                recommendations.push('ติดตามกับแพทย์ทุก 3-6 เดือน');
+            } else if (riskLevel === 'เสี่ยงปานกลาง') {
+                recommendations.push('ปรับเปลี่ยนพฤติกรรมการกินให้เหมาะสม');
+                recommendations.push('เพิ่มการออกกำลังกายเป็น 150 นาที/สัปดาห์');
+                recommendations.push('ลดน้ำหนักหากมีน้ำหนักเกิน');
+                recommendations.push('ตรวจสุขภาพประจำปี');
+                if (data.smoking) recommendations.push('ลดหรือเลิกการสูบบุหรี่');
+                recommendations.push('ควบคุมความเครียดและนอนหลับให้เพียงพอ');
+            } else {
+                recommendations.push('รักษาวิถีชีวิตที่ดีในปัจจุบัน');
+                recommendations.push('ออกกำลังกายสม่ำเสมอ');
+                recommendations.push('รับประทานผักผลไม้อย่างเพียงพอ');
+                recommendations.push('ตรวจสุขภาพประจำปี');
+                recommendations.push('หลีกเลี่ยงการสูบบุหรี่และดื่มแอลกอฮอล์');
+            }
+
+            // Specific recommendations based on BMI
+            if (bmi && parseFloat(bmi) >= 25) {
+                recommendations.push('ควบคุมน้ำหนักให้อยู่ในเกณฑ์ปกติ (BMI < 25)');
+            }
+
+            // Specific recommendations based on waist circumference
+            if ((data.gender === 'male' && data.waistCircumference >= 90) || 
+                (data.gender === 'female' && data.waistCircumference >= 80)) {
+                recommendations.push('ลดรอบเอวด้วยการออกกำลังกายและควบคุมอาหาร');
+            }
+
+            return recommendations;
+        };
+
+        const NCDRiskChart = ({ result, data }) => {
+            const risks = [
+                { name: 'อายุ (Age)', value: data.age >= 50 ? 80 : data.age >= 40 ? 60 : 30 },
+                { name: 'ประวัติครอบครัว (Family Hx)', value: data.familyHistoryDM ? 90 : 10 },
+                { name: 'รอบเอว (Waist)', value: Math.min(100, (data.waistCircumference - 70) * 2) },
+                { name: 'กิจกรรม (Activity)', value: data.physicalActivity === 'none' ? 90 : data.physicalActivity === 'minimal' ? 60 : 20 },
+                { name: 'ความดัน (BP)', value: data.highBP ? 80 : 20 },
+                { name: 'อาหาร (Diet)', value: data.processedFood === 'daily' ? 80 : data.vegetableIntake === 'rarely' ? 60 : 20 }
+            ];
+
+            const centerX = 150;
+            const centerY = 150;
+            const radius = 100;
+            const numFactors = risks.length;
+
+            const getCoordinates = (angle, value, maxRadius = radius) => {
+                const radian = (angle - 90) * (Math.PI / 180);
+                const r = (value / 100) * maxRadius;
+                return {
+                    x: centerX + r * Math.cos(radian),
+                    y: centerY + r * Math.sin(radian)
+                };
+            };
+
+            const gridLevels = [20, 40, 60, 80, 100];
+            const angleStep = 360 / numFactors;
+
+            return h('div', { className: 'bg-white p-6 rounded-xl shadow-lg' },
+                h('h3', { className: 'text-lg font-semibold text-gray-800 mb-4 text-center' }, 
+                    'แผนภูมิปัจจัยเสี่ยง NCD (NCD Risk Factors Chart)'),
+                h('svg', { width: 300, height: 300, className: 'mx-auto ncd-chart' },
+                    // Grid circles
+                    ...gridLevels.map(level => 
+                        h('circle', {
+                            key: `grid-${level}`,
+                            cx: centerX,
+                            cy: centerY,
+                            r: (level / 100) * radius,
+                            fill: 'none',
+                            stroke: '#e5e7eb',
+                            strokeWidth: 1
+                        })
+                    ),
+                    
+                    // Grid lines
+                    ...risks.map((_, index) => {
+                        const angle = index * angleStep;
+                        const endCoords = getCoordinates(angle, 100);
+                        return h('line', {
+                            key: `line-${index}`,
+                            x1: centerX,
+                            y1: centerY,
+                            x2: endCoords.x,
+                            y2: endCoords.y,
+                            stroke: '#e5e7eb',
+                            strokeWidth: 1
+                        });
+                    }),
+
+                    // Data polygon
+                    h('polygon', {
+                        points: risks.map((risk, index) => {
+                            const angle = index * angleStep;
+                            const coords = getCoordinates(angle, risk.value);
+                            return `${coords.x},${coords.y}`;
+                        }).join(' '),
+                        fill: result.color,
+                        fillOpacity: 0.3,
+                        stroke: result.color,
+                        strokeWidth: 2
+                    }),
+
+                    // Data points
+                    ...risks.map((risk, index) => {
+                        const angle = index * angleStep;
+                        const coords = getCoordinates(angle, risk.value);
+                        return h('circle', {
+                            key: `point-${index}`,
+                            cx: coords.x,
+                            cy: coords.y,
+                            r: 4,
+                            fill: result.color,
+                            stroke: 'white',
+                            strokeWidth: 2
+                        });
+                    }),
+
+                    // Labels
+                    ...risks.map((risk, index) => {
+                        const angle = index * angleStep;
+                        const labelCoords = getCoordinates(angle, 115, radius);
+                        return h('text', {
+                            key: `label-${index}`,
+                            x: labelCoords.x,
+                            y: labelCoords.y,
+                            textAnchor: 'middle',
+                            dominantBaseline: 'central',
+                            fontSize: '10',
+                            fill: '#374151',
+                            fontWeight: 'bold'
+                        }, risk.name);
+                    })
+                )
+            );
+        };
+
+        const NCDRiskAssessment = () => {
+            const [currentStep, setCurrentStep] = useState(1);
+            const [formData, setFormData] = useState({
+                // Demographics
+                age: '', gender: '', weight: '', height: '', waistCircumference: '',
+                
+                // Family History
+                familyHistoryDM: false, familyHistoryHTN: false, familyHistoryHeart: false,
+                familyHistoryDMClose: false,
+                
+                // Lifestyle
+                physicalActivity: 'moderate', smoking: false, alcohol: 'none',
+                vegetableIntake: 'daily', processedFood: 'rarely',
+                
+                // Medical History
+                highBP: false, preDiabetes: false, previousGDM: false
+            });
+            const [result, setResult] = useState(null);
+            const [isLoading, setIsLoading] = useState(false);
+
+            const updateFormData = (field, value) => {
+                setFormData(prev => ({ ...prev, [field]: value }));
+            };
+
+            const nextStep = () => {
+                setCurrentStep(prev => Math.min(prev + 1, 5));
+            };
+
+            const prevStep = () => {
+                setCurrentStep(prev => Math.max(prev - 1, 1));
+            };
+
+            const calculateRisk = () => {
+                setIsLoading(true);
+                setTimeout(() => {
+                    const riskResult = calculateNCDRisk(formData);
+                    setResult(riskResult);
+                    
+                    // Send Telegram notification
+                    sendTelegramNotification(riskResult, formData);
+                    
+                    setIsLoading(false);
+                    setCurrentStep(6);
+                }, 2000);
+            };
+
+            const resetSystem = () => {
+                setIsLoading(true);
+                setTimeout(() => {
+                    try {
+                        setCurrentStep(1);
+                        setFormData({
+                            age: '', gender: '', weight: '', height: '', waistCircumference: '',
+                            familyHistoryDM: false, familyHistoryHTN: false, familyHistoryHeart: false,
+                            familyHistoryDMClose: false, physicalActivity: 'moderate', smoking: false, 
+                            alcohol: 'none', vegetableIntake: 'daily', processedFood: 'rarely',
+                            highBP: false, preDiabetes: false, previousGDM: false
+                        });
+                        setResult(null);
+                    } catch (error) {
+                        console.warn('Reset error:', error);
+                        if (window.confirm('เกิดข้อผิดพลาด ต้องการรีเฟรชหน้านี้หรือไม่?')) {
+                            window.location.reload();
+                        }
+                    } finally {
+                        setIsLoading(false);
+                    }
+                }, 500);
+            };
+
+            const generatePDF = () => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                
+                // Header
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(18);
+                doc.text('NCD Risk Assessment Report', 20, 25);
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(10);
+                doc.text('Non-Communicable Disease Risk Screening System (CBAC + FINDRISC)', 20, 33);
+                doc.text(`Assessment Date: ${result.timestamp.toLocaleDateString('en-US')}`, 20, 45);
+                
+                // Patient Info
+                doc.setDrawColor(200, 200, 200);
+                doc.rect(20, 55, 170, 30);
+                doc.setFontSize(9);
+                doc.text(`Age: ${formData.age} years | Gender: ${formData.gender} | BMI: ${result.bmi || 'N/A'}`, 25, 63);
+                doc.text(`Waist Circumference: ${formData.waistCircumference} cm`, 25, 70);
+                doc.text(`Physical Activity: ${formData.physicalActivity} | Smoking: ${formData.smoking ? 'Yes' : 'No'}`, 25, 77);
+                
+                let yPos = 95;
+                
+                // Risk Results
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(14);
+                doc.text('Risk Assessment Results', 20, yPos);
+                yPos += 15;
+                
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(11);
+                doc.text(`CBAC Score: ${result.cbacScore}`, 25, yPos);
+                yPos += 8;
+                doc.text(`FINDRISC Score: ${result.findriscScore}`, 25, yPos);
+                yPos += 8;
+                doc.text(`Combined Score: ${result.combinedScore}`, 25, yPos);
+                yPos += 8;
+                doc.text(`Risk Level: ${result.riskLevel}`, 25, yPos);
+                yPos += 8;
+                doc.text(`Overall Risk: ${result.overallRisk}%`, 25, yPos);
+                yPos += 15;
+                
+                // Recommendations
+                doc.setFont("helvetica", "bold");
+                doc.setFontSize(12);
+                doc.text('Recommendations:', 20, yPos);
+                yPos += 10;
+                
+                doc.setFont("helvetica", "normal");
+                doc.setFontSize(9);
+                result.recommendations.forEach((rec, index) => {
+                    const lines = doc.splitTextToSize(`${index + 1}. ${rec}`, 160);
+                    doc.text(lines, 25, yPos);
+                    yPos += lines.length * 5;
+                    if (yPos > 250) {
+                        doc.addPage();
+                        yPos = 20;
+                    }
+                });
+                
+                // Footer
+                doc.setFontSize(8);
+                doc.setTextColor(100, 100, 100);
+                doc.text('Reference: Community Based Assessment Checklist (CBAC) & Finnish Diabetes Risk Score (FINDRISC)', 20, 270);
+                doc.text('Ministry of Public Health, Thailand', 20, 276);
+                
+                doc.save(`NCD_Risk_Assessment_${new Date().toISOString().split('T')[0]}.pdf`);
+            };
+
+            if (isLoading) {
+                return h('div', { className: 'flex items-center justify-center min-h-screen' },
+                    h('div', { className: 'text-center' },
+                        h('div', { className: 'animate-spin rounded-full h-16 w-16 border-b-2 border-purple-600 mx-auto' }),
+                        h('p', { className: 'mt-4 text-gray-600' }, 'กำลังประมวลผลคะแนนความเสี่ยง...')
+                    )
+                );
+            }
+
+            return h('div', { className: 'container mx-auto px-4 py-8 max-w-5xl' },
+                // Header
+                h('header', { className: 'text-center mb-12 bg-white rounded-2xl shadow-lg p-8' },
+                    h('div', { className: 'flex items-center justify-center gap-6 mb-6' },
+                        h('div', { 
+                            className: 'w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-purple-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg',
+                        }, [
+                            h('i', { className: 'fas fa-procedures text-white text-2xl md:text-3xl' })
+                        ]),
+                        h('div', { className: 'text-left' },
+                            h('h1', { className: 'text-3xl md:text-4xl font-bold text-gray-800 leading-tight' },
+                                'ระบบประเมินความเสี่ยงโรคไม่ติดต่อเรื้อรัง'
+                            ),
+                            h('p', { className: 'text-lg text-purple-600 mt-2' },
+                                'NCD Risk Assessment System (CBAC + FINDRISC)'
+                            )
+                        )
+                    )
+                ),
+
+                // Progress bar
+                currentStep <= 5 && h('div', { className: 'mb-8' },
+                    h('div', { className: 'bg-gray-200 rounded-full h-2' },
+                        h('div', { 
+                            className: 'progress-bar h-2 rounded-full transition-all duration-300',
+                            style: { width: `${(currentStep / 5) * 100}%` }
+                        })
+                    ),
+                    h('p', { className: 'text-center mt-2 text-gray-600' }, `ขั้นตอนที่ ${currentStep} จาก 5`)
+                ),
+
+                // Step 1: Demographics
+                currentStep === 1 && h('div', { className: 'bg-white rounded-2xl shadow-lg p-8 fade-in' },
+                    h('h2', { className: 'text-2xl font-bold text-gray-800 mb-6' }, '1. ข้อมูลพื้นฐาน (Demographics)'),
+                    h('div', { className: 'grid md:grid-cols-2 gap-6' },
+                        h('div', {},
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'อายุ (Age) *'),
+                            h('input', {
+                                type: 'number',
+                                value: formData.age,
+                                onChange: (e) => updateFormData('age', e.target.value),
+                                className: 'w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500',
+                                min: '18', max: '100', required: true
+                            })
+                        ),
+                        h('div', {},
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'เพศ (Gender) *'),
+                            h('select', {
+                                value: formData.gender,
+                                onChange: (e) => updateFormData('gender', e.target.value),
+                                className: 'w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500',
+                                required: true
+                            },
+                                h('option', { value: '' }, 'กรุณาเลือก'),
+                                h('option', { value: 'male' }, 'ชาย (Male)'),
+                                h('option', { value: 'female' }, 'หญิง (Female)')
+                            )
+                        ),
+                        h('div', {},
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'น้ำหนัก (Weight) กก. *'),
+                            h('input', {
+                                type: 'number',
+                                value: formData.weight,
+                                onChange: (e) => updateFormData('weight', e.target.value),
+                                className: 'w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500',
+                                min: '30', max: '200', required: true
+                            })
+                        ),
+                        h('div', {},
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'ส่วนสูง (Height) ซม. *'),
+                            h('input', {
+                                type: 'number',
+                                value: formData.height,
+                                onChange: (e) => updateFormData('height', e.target.value),
+                                className: 'w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500',
+                                min: '130', max: '220', required: true
+                            })
+                        ),
+                        h('div', { className: 'md:col-span-2' },
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'รอบเอว (Waist Circumference) ซม. *'),
+                            h('input', {
+                                type: 'number',
+                                value: formData.waistCircumference,
+                                onChange: (e) => updateFormData('waistCircumference', e.target.value),
+                                className: 'w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500',
+                                min: '50', max: '150', required: true
+                            })
+                        )
+                    ),
+                    h('div', { className: 'mt-8 flex justify-end' },
+                        h('button', {
+                            onClick: nextStep,
+                            disabled: !formData.age || !formData.gender || !formData.weight || !formData.height || !formData.waistCircumference,
+                            className: 'bg-purple-600 text-white px-8 py-3 rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors'
+                        }, 'ถัดไป (Next)')
+                    )
+                ),
+
+                // Step 2: Family History
+                currentStep === 2 && h('div', { className: 'bg-white rounded-2xl shadow-lg p-8 fade-in' },
+                    h('h2', { className: 'text-2xl font-bold text-gray-800 mb-6' }, '2. ประวัติครอบครัว (Family History)'),
+                    h('div', { className: 'space-y-4' },
+                        [
+                            { key: 'familyHistoryDM', label: 'ประวัติครอบครัวเป็นเบาหวาน', icon: 'fas fa-tint', color: '#ef4444' },
+                            { key: 'familyHistoryHTN', label: 'ประวัติครอบครัวเป็นความดันโลหิตสูง', icon: 'fas fa-heartbeat', color: '#f59e0b' },
+                            { key: 'familyHistoryHeart', label: 'ประวัติครอบครัวเป็นโรคหัวใจ', icon: 'fas fa-heart', color: '#dc2626' }
+                        ].map((item) =>
+                            h('div', {
+                                key: item.key,
+                                className: `cbac-card p-4 rounded-lg cursor-pointer ${formData[item.key] ? 'cbac-selected' : ''}`
+                            },
+                                h('div', { className: 'flex items-center justify-between' },
+                                    h('div', { className: 'flex items-center space-x-3' },
+                                        h('i', { className: `${item.icon} text-2xl`, style: { color: item.color } }),
+                                        h('span', { className: 'font-medium text-gray-900' }, item.label)
+                                    ),
+                                    h('div', { className: 'flex items-center space-x-3' },
+                                        h('button', {
+                                            type: 'button',
+                                            className: `px-4 py-2 rounded-lg font-medium transition-colors ${
+                                                formData[item.key] === false 
+                                                    ? 'bg-gray-200 text-gray-800' 
+                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            }`,
+                                            onClick: () => updateFormData(item.key, false)
+                                        }, 'ไม่มี'),
+                                        h('button', {
+                                            type: 'button',
+                                            className: `px-4 py-2 rounded-lg font-medium transition-colors ${
+                                                formData[item.key] === true 
+                                                    ? 'bg-purple-500 text-white' 
+                                                    : 'bg-gray-100 text-gray-600 hover:bg-purple-100'
+                                            }`,
+                                            onClick: () => updateFormData(item.key, true)
+                                        }, 'มี')
+                                    )
+                                )
+                            )
+                        ),
+                        formData.familyHistoryDM && h('div', { className: 'ml-6 p-4 bg-yellow-50 rounded-lg' },
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 
+                                'ญาติใกล้ชิด (พ่อ แม่ พี่ น้อง บุตร) เป็นเบาหวานหรือไม่?'),
+                            h('div', { className: 'flex space-x-4' },
+                                h('button', {
+                                    type: 'button',
+                                    className: `px-4 py-2 rounded-lg font-medium transition-colors ${
+                                        formData.familyHistoryDMClose === false 
+                                            ? 'bg-gray-200 text-gray-800' 
+                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                    }`,
+                                    onClick: () => updateFormData('familyHistoryDMClose', false)
+                                }, 'ญาติไกล'),
+                                h('button', {
+                                    type: 'button',
+                                    className: `px-4 py-2 rounded-lg font-medium transition-colors ${
+                                        formData.familyHistoryDMClose === true 
+                                            ? 'bg-red-500 text-white' 
+                                            : 'bg-gray-100 text-gray-600 hover:bg-red-100'
+                                    }`,
+                                    onClick: () => updateFormData('familyHistoryDMClose', true)
+                                }, 'ญาติใกล้ชิด')
+                            )
+                        )
+                    ),
+                    h('div', { className: 'mt-8 flex justify-between' },
+                        h('button', {
+                            onClick: prevStep,
+                            className: 'bg-gray-300 text-gray-700 px-8 py-3 rounded-lg hover:bg-gray-400 transition-colors'
+                        }, 'ก่อนหน้า'),
+                        h('button', {
+                            onClick: nextStep,
+                            className: 'bg-purple-600 text-white px-8 py-3 rounded-lg hover:bg-purple-700 transition-colors'
+                        }, 'ถัดไป')
+                    )
+                ),
+
+                // Step 3: Lifestyle
+                currentStep === 3 && h('div', { className: 'bg-white rounded-2xl shadow-lg p-8 fade-in' },
+                    h('h2', { className: 'text-2xl font-bold text-gray-800 mb-6' }, '3. วิถีชีวิต (Lifestyle)'),
+                    h('div', { className: 'space-y-6' },
+                        h('div', {},
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-3' }, 'การออกกำลังกาย (Physical Activity) *'),
+                            h('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-3' },
+                                [
+                                    ['none', 'ไม่ออกกำลังกาย', 'fas fa-bed', '#ef4444'],
+                                    ['minimal', 'น้อย (1-2 วัน/สัปดาห์)', 'fas fa-walking', '#f59e0b'],
+                                    ['moderate', 'ปานกลาง (3-4 วัน/สัปดาห์)', 'fas fa-running', '#84cc16'],
+                                    ['high', 'มาก (5+ วัน/สัปดาห์)', 'fas fa-dumbbell', '#10b981']
+                                ].map(([value, label, icon, color]) =>
+                                    h('div', {
+                                        key: value,
+                                        className: `cbac-card p-4 rounded-lg cursor-pointer ${
+                                            formData.physicalActivity === value ? 'cbac-selected' : ''
+                                        }`,
+                                        onClick: () => updateFormData('physicalActivity', value)
+                                    },
+                                        h('div', { className: 'flex flex-col items-center space-y-2' },
+                                            h('i', { className: `${icon} text-2xl`, style: { color } }),
+                                            h('div', { className: 'text-sm font-medium text-center' }, label),
+                                            formData.physicalActivity === value && 
+                                                h('i', { className: 'fas fa-check text-purple-500' })
+                                        )
+                                    )
+                                )
+                            )
+                        ),
+                        h('div', {},
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-3' }, 'การรับประทานผักผลไม้ (Vegetable/Fruit Intake) *'),
+                            h('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-3' },
+                                [
+                                    ['daily', 'ทุกวัน', 'fas fa-apple-alt', '#10b981'],
+                                    ['often', 'บ่อยครั้ง (4-6 วัน/สัปดาห์)', 'fas fa-carrot', '#84cc16'],
+                                    ['rarely', 'นาน ๆ ครั้ง', 'fas fa-times-circle', '#ef4444']
+                                ].map(([value, label, icon, color]) =>
+                                    h('div', {
+                                        key: value,
+                                        className: `cbac-card p-4 rounded-lg cursor-pointer ${
+                                            formData.vegetableIntake === value ? 'cbac-selected' : ''
+                                        }`,
+                                        onClick: () => updateFormData('vegetableIntake', value)
+                                    },
+                                        h('div', { className: 'flex flex-col items-center space-y-2' },
+                                            h('i', { className: `${icon} text-2xl`, style: { color } }),
+                                            h('div', { className: 'text-sm font-medium text-center' }, label),
+                                            formData.vegetableIntake === value && 
+                                                h('i', { className: 'fas fa-check text-purple-500' })
+                                        )
+                                    )
+                                )
+                            )
+                        ),
+                        h('div', {},
+                            h('label', { className: 'block text-sm font-medium text-gray-700 mb-3' }, 'อาหารแปรรูป/จานด่วน (Processed Food) *'),
+                            h('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-3' },
+                                [
+                                    ['rarely', 'นาน ๆ ครั้ง', 'fas fa-check-circle', '#10b981'],
+                                    ['sometimes', 'บางครั้ง (2-3 ครั้ง/สัปดาห์)', 'fas fa-hamburger', '#f59e0b'],
+                                    ['daily', 'ทุกวัน', 'fas fa-exclamation-triangle', '#ef4444']
+                                ].map(([value, label, icon, color]) =>
+                                    h('div', {
+                                        key: value,
+                                        className: `cbac-card p-4 rounded-lg cursor-pointer ${
+                                            formData.processedFood === value ? 'cbac-selected' : ''
+                                        }`,
+                                        onClick: () => updateFormData('processedFood', value)
+                                    },
+                                        h('div', { className: 'flex flex-col items-center space-y-2' },
+                                            h('i', { className: `${icon} text-2xl`, style: { color } }),
+                                            h('div', { className: 'text-sm font-medium text-center' }, label),
+                                            formData.processedFood === value && 
+                                                h('i', { className: 'fas fa-check text-purple-500' })
+                                        )
+                                    )
+                                )
+                            )
+                        ),
+                        h('div', { className: 'grid md:grid-cols-2 gap-6' },
+                            h('div', { className: `cbac-card p-4 rounded-lg ${formData.smoking ? 'cbac-selected' : ''}` },
+                                h('div', { className: 'flex items-center justify-between' },
+                                    h('div', { className: 'flex items-center space-x-3' },
+                                        h('i', { className: 'fas fa-smoking text-2xl text-red-500' }),
+                                        h('span', { className: 'font-medium text-gray-900' }, 'การสูบบุหรี่ (Smoking)')
+                                    ),
+                                    h('div', { className: 'flex items-center space-x-3' },
+                                        h('button', {
+                                            type: 'button',
+                                            className: `px-4 py-2 rounded-lg font-medium transition-colors ${
+                                                formData.smoking === false 
+                                                    ? 'bg-gray-200 text-gray-800' 
+                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            }`,
+                                            onClick: () => updateFormData('smoking', false)
+                                        }, 'ไม่สูบ'),
+                                        h('button', {
+                                            type: 'button',
+                                            className: `px-4 py-2 rounded-lg font-medium transition-colors ${
+                                                formData.smoking === true 
+                                                    ? 'bg-red-500 text-white' 
+                                                    : 'bg-gray-100 text-gray-600 hover:bg-red-100'
+                                            }`,
+                                            onClick: () => updateFormData('smoking', true)
+                                        }, 'สูบ')
+                                    )
+                                )
+                            ),
+                            h('div', {},
+                                h('label', { className: 'block text-sm font-medium text-gray-700 mb-2' }, 'การดื่มแอลกอฮอล์ (Alcohol)'),
+                                h('select', {
+                                    value: formData.alcohol,
+                                    onChange: (e) => updateFormData('alcohol', e.target.value),
+                                    className: 'w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500'
+                                },
+                                    h('option', { value: 'none' }, 'ไม่ดื่ม'),
+                                    h('option', { value: 'light' }, 'เบา (1-2 แก้ว/สัปดาห์)'),
+                                    h('option', { value: 'moderate' }, 'ปานกลาง (3-7 แก้ว/สัปดาห์)'),
+                                    h('option', { value: 'heavy' }, 'มาก (มากกว่า 7 แก้ว/สัปดาห์)')
+                                )
+                            )
+                        )
+                    ),
+                    h('div', { className: 'mt-8 flex justify-between' },
+                        h('button', {
+                            onClick: prevStep,
+                            className: 'bg-gray-300 text-gray-700 px-8 py-3 rounded-lg hover:bg-gray-400 transition-colors'
+                        }, 'ก่อนหน้า'),
+                        h('button', {
+                            onClick: nextStep,
+                            className: 'bg-purple-600 text-white px-8 py-3 rounded-lg hover:bg-purple-700 transition-colors'
+                        }, 'ถัดไป')
+                    )
+                ),
+
+                // Step 4: Medical History
+                currentStep === 4 && h('div', { className: 'bg-white rounded-2xl shadow-lg p-8 fade-in' },
+                    h('h2', { className: 'text-2xl font-bold text-gray-800 mb-6' }, '4. ประวัติทางการแพทย์ (Medical History)'),
+                    h('div', { className: 'space-y-4' },
+                        [
+                            { key: 'highBP', label: 'ความดันโลหิตสูง', icon: 'fas fa-heartbeat', color: '#ef4444' },
+                            { key: 'preDiabetes', label: 'เคยตรวจพบน้ำตาลในเลือดสูง', icon: 'fas fa-tint', color: '#f59e0b' },
+                            { key: 'previousGDM', label: 'เคยเป็นเบาหวานขณะตั้งครรภ์ (สำหรับผู้หญิง)', icon: 'fas fa-baby', color: '#8b5cf6' }
+                        ].map((item) =>
+                            h('div', {
+                                key: item.key,
+                                className: `cbac-card p-4 rounded-lg cursor-pointer ${formData[item.key] ? 'cbac-selected' : ''}`
+                            },
+                                h('div', { className: 'flex items-center justify-between' },
+                                    h('div', { className: 'flex items-center space-x-3' },
+                                        h('i', { className: `${item.icon} text-2xl`, style: { color: item.color } }),
+                                        h('span', { className: 'font-medium text-gray-900' }, item.label)
+                                    ),
+                                    h('div', { className: 'flex items-center space-x-3' },
+                                        h('button', {
+                                            type: 'button',
+                                            className: `px-4 py-2 rounded-lg font-medium transition-colors ${
+                                                formData[item.key] === false 
+                                                    ? 'bg-gray-200 text-gray-800' 
+                                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            }`,
+                                            onClick: () => updateFormData(item.key, false)
+                                        }, 'ไม่มี'),
+                                        h('button', {
+                                            type: 'button',
+                                            className: `px-4 py-2 rounded-lg font-medium transition-colors ${
+                                                formData[item.key] === true 
+                                                    ? 'bg-purple-500 text-white' 
+                                                    : 'bg-gray-100 text-gray-600 hover:bg-purple-100'
+                                            }`,
+                                            onClick: () => updateFormData(item.key, true)
+                                        }, 'มี')
+                                    )
+                                )
+                            )
+                        )
+                    ),
+                    h('div', { className: 'mt-8 flex justify-between' },
+                        h('button', {
+                            onClick: prevStep,
+                            className: 'bg-gray-300 text-gray-700 px-8 py-3 rounded-lg hover:bg-gray-400 transition-colors'
+                        }, 'ก่อนหน้า'),
+                        h('button', {
+                            onClick: nextStep,
+                            className: 'bg-purple-600 text-white px-8 py-3 rounded-lg hover:bg-purple-700 transition-colors'
+                        }, 'ถัดไป')
+                    )
+                ),
+
+                // Step 5: Review
+                currentStep === 5 && h('div', { className: 'bg-white rounded-2xl shadow-lg p-8 fade-in' },
+                    h('h2', { className: 'text-2xl font-bold text-gray-800 mb-6' }, '5. ทบทวนข้อมูล (Review)'),
+                    h('div', { className: 'grid md:grid-cols-2 gap-6' },
+                        h('div', { className: 'bg-gray-50 p-4 rounded-lg' },
+                            h('h3', { className: 'font-medium text-gray-700 mb-3' }, 'ข้อมูลพื้นฐาน'),
+                            h('div', { className: 'text-sm space-y-1' },
+                                h('div', {}, `อายุ: ${formData.age} ปี`),
+                                h('div', {}, `เพศ: ${formData.gender === 'male' ? 'ชาย' : 'หญิง'}`),
+                                h('div', {}, `น้ำหนัก: ${formData.weight} กก.`),
+                                h('div', {}, `ส่วนสูง: ${formData.height} ซม.`),
+                                h('div', {}, `รอบเอว: ${formData.waistCircumference} ซม.`)
+                            )
+                        ),
+                        h('div', { className: 'bg-gray-50 p-4 rounded-lg' },
+                            h('h3', { className: 'font-medium text-gray-700 mb-3' }, 'ประวัติครอบครัว'),
+                            h('div', { className: 'text-sm space-y-1' },
+                                h('div', {}, `เบาหวาน: ${formData.familyHistoryDM ? 'มี' : 'ไม่มี'}`),
+                                h('div', {}, `ความดันสูง: ${formData.familyHistoryHTN ? 'มี' : 'ไม่มี'}`),
+                                h('div', {}, `โรคหัวใจ: ${formData.familyHistoryHeart ? 'มี' : 'ไม่มี'}`)
+                            )
+                        ),
+                        h('div', { className: 'bg-gray-50 p-4 rounded-lg' },
+                            h('h3', { className: 'font-medium text-gray-700 mb-3' }, 'วิถีชีวิต'),
+                            h('div', { className: 'text-sm space-y-1' },
+                                h('div', {}, `ออกกำลังกาย: ${formData.physicalActivity}`),
+                                h('div', {}, `ผักผลไม้: ${formData.vegetableIntake}`),
+                                h('div', {}, `อาหารแปรรูป: ${formData.processedFood}`),
+                                h('div', {}, `สูบบุหรี่: ${formData.smoking ? 'สูบ' : 'ไม่สูบ'}`),
+                                h('div', {}, `แอลกอฮอล์: ${formData.alcohol}`)
+                            )
+                        ),
+                        h('div', { className: 'bg-gray-50 p-4 rounded-lg' },
+                            h('h3', { className: 'font-medium text-gray-700 mb-3' }, 'ประวัติทางการแพทย์'),
+                            h('div', { className: 'text-sm space-y-1' },
+                                h('div', {}, `ความดันสูง: ${formData.highBP ? 'มี' : 'ไม่มี'}`),
+                                h('div', {}, `น้ำตาลสูง: ${formData.preDiabetes ? 'เคย' : 'ไม่เคย'}`),
+                                h('div', {}, `เบาหวานขณะตั้งครรภ์: ${formData.previousGDM ? 'เคย' : 'ไม่เคย'}`)
+                            )
+                        )
+                    ),
+                    h('div', { className: 'mt-8 flex justify-between' },
+                        h('button', {
+                            onClick: prevStep,
+                            className: 'bg-gray-300 text-gray-700 px-8 py-3 rounded-lg hover:bg-gray-400 transition-colors'
+                        }, 'ก่อนหน้า'),
+                        h('button', {
+                            onClick: calculateRisk,
+                            className: 'bg-green-600 text-white px-8 py-3 rounded-lg hover:bg-green-700 transition-colors'
+                        }, 'คำนวณความเสี่ยง')
+                    )
+                ),
+
+                // Results
+                currentStep === 6 && result && h('div', { className: 'space-y-8 fade-in' },
+                    // Risk Level Card
+                    h('div', { 
+                        className: `rounded-2xl shadow-lg p-8 text-white text-center`,
+                        style: { background: `linear-gradient(135deg, ${result.color}, ${result.color}dd)` }
+                    },
+                        h('h2', { className: 'text-3xl font-bold mb-4' }, 'ผลการประเมินความเสี่ยง NCD'),
+                        h('div', { className: 'text-6xl font-bold mb-2' }, `${result.overallRisk}%`),
+                        h('div', { className: 'text-xl mb-2' }, `ระดับ: ${result.riskLevel}`),
+                        h('div', { className: 'text-sm opacity-90' }, result.description)
+                    ),
+
+                    // Scores Summary
+                    h('div', { className: 'bg-white rounded-2xl shadow-lg p-6' },
+                        h('h3', { className: 'text-xl font-bold text-gray-800 mb-4' }, 'สรุปคะแนนความเสี่ยง'),
+                        h('div', { className: 'grid md:grid-cols-3 gap-4' },
+                            h('div', { className: 'bg-blue-50 p-4 rounded-lg text-center' },
+                                h('div', { className: 'text-2xl font-bold text-blue-600' }, result.cbacScore),
+                                h('div', { className: 'text-sm text-blue-800' }, 'CBAC Score'),
+                                h('div', { className: 'text-xs text-gray-600 mt-1' }, 'Community Based Assessment')
+                            ),
+                            h('div', { className: 'bg-green-50 p-4 rounded-lg text-center' },
+                                h('div', { className: 'text-2xl font-bold text-green-600' }, result.findriscScore),
+                                h('div', { className: 'text-sm text-green-800' }, 'FINDRISC Score'),
+                                h('div', { className: 'text-xs text-gray-600 mt-1' }, 'Finnish Diabetes Risk Score')
+                            ),
+                            h('div', { className: 'bg-purple-50 p-4 rounded-lg text-center' },
+                                h('div', { className: 'text-2xl font-bold text-purple-600' }, result.combinedScore),
+                                h('div', { className: 'text-sm text-purple-800' }, 'Combined Score'),
+                                h('div', { className: 'text-xs text-gray-600 mt-1' }, 'Weighted Average')
+                            )
+                        )
+                    ),
+
+                    // Patient Summary
+                    h('div', { className: 'bg-white rounded-2xl shadow-lg p-6' },
+                        h('h3', { className: 'text-xl font-bold text-gray-800 mb-4' }, 'สรุปข้อมูลผู้ประเมิน'),
+                        h('div', { className: 'grid md:grid-cols-2 gap-4 text-sm' },
+                            h('div', { className: 'space-y-2' },
+                                h('div', {}, `อายุ: ${formData.age} ปี | เพศ: ${formData.gender === 'male' ? 'ชาย' : 'หญิง'}`),
+                                h('div', {}, `BMI: ${result.bmi} | รอบเอว: ${formData.waistCircumference} ซม.`),
+                                h('div', {}, `กิจกรรม: ${formData.physicalActivity} | การสูบบุหรี่: ${formData.smoking ? 'สูบ' : 'ไม่สูบ'}`)
+                            ),
+                            h('div', { className: 'space-y-2' },
+                                h('div', {}, `ประวัติเบาหวาน: ${formData.familyHistoryDM ? 'มี' : 'ไม่มี'}`),
+                                h('div', {}, `ความดันสูง: ${formData.highBP ? 'มี' : 'ไม่มี'}`),
+                                h('div', {}, `น้ำตาลสูงเคย: ${formData.preDiabetes ? 'เคย' : 'ไม่เคย'}`)
+                            )
+                        )
+                    ),
+
+                    // Risk Chart
+                    h(NCDRiskChart, { result, data: formData }),
+
+                    // Recommendations
+                    h('div', { className: 'bg-white rounded-2xl shadow-lg p-6' },
+                        h('h3', { className: 'text-xl font-bold text-gray-800 mb-4' }, 'คำแนะนำสำหรับคุณ'),
+                        h('ul', { className: 'space-y-3' },
+                            ...result.recommendations.map((rec, index) => 
+                                h('li', { key: index, className: 'flex items-start space-x-3' },
+                                    h('span', { className: 'flex-shrink-0 w-6 h-6 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-sm font-medium' }, index + 1),
+                                    h('span', { className: 'text-gray-700' }, rec)
+                                )
+                            )
+                        )
+                    ),
+
+                    // Action Buttons
+                    h('div', { className: 'flex flex-col sm:flex-row gap-4 justify-center' },
+                        h('button', {
+                            onClick: generatePDF,
+                            className: 'bg-red-600 text-white px-8 py-3 rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2'
+                        }, 
+                            h('span', {}, '📄'),
+                            'ดาวน์โหลดรายงาน PDF'
+                        ),
+                        h('button', {
+                            onClick: resetSystem,
+                            disabled: isLoading,
+                            className: 'bg-gray-600 text-white px-8 py-3 rounded-lg hover:bg-gray-700 transition-colors flex items-center justify-center gap-2 disabled:bg-gray-300'
+                        },
+                            h('span', {}, '🔄'),
+                            'ประเมินใหม่'
+                        )
+                    ),
+
+                    // Telegram Status
+                    h('div', { className: 'text-center' },
+                        h('div', { className: 'inline-flex items-center space-x-2 text-xs px-3 py-1 rounded-full', 
+                            style: { 
+                                backgroundColor: TELEGRAM_CONFIG.ENABLED ? '#dcfce7' : '#fef2f2',
+                                color: TELEGRAM_CONFIG.ENABLED ? '#166534' : '#dc2626'
+                            }
+                        },
+                            h('i', { className: `fas fa-${TELEGRAM_CONFIG.ENABLED ? 'check-circle' : 'times-circle'}` }),
+                            h('span', {}, TELEGRAM_CONFIG.ENABLED ? 'Notification sent successfully' : 'Notification disabled')
+                        )
+                    )
+                ),
+
+                // Footer
+                h('footer', { className: 'text-center mt-16 text-gray-500 text-sm' },
+                    h('p', {}, 'กรมอนามัย กระทรวงสาธารณสุข | Department of Health, Ministry of Public Health'),
+                    h('p', { className: 'mt-2' }, 'ระบบนี้เป็นเครื่องมือคัดกรองเบื้องต้น ไม่สามารถทดแทนการตรวจวินิจฉัยทางการแพทย์')
+                )
+            );
+        };
+
+        ReactDOM.render(h(NCDRiskAssessment), document.getElementById('root'));
+    </script>
+</body>
+</html>
